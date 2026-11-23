@@ -390,7 +390,7 @@ export default function (C) {
     b.box(M.steel, 0.2, 0.015, 0.12, 182.85, yt + 0.0075, 1.3);
     b.vcyl(M.brass, 0.028, 0.32, 182.85, yt, 1.25, 10); b.sph(M.brass, 0.042, 182.85, yt + 0.33, 1.25, 1, 1, 1, 10);
     b.cyl(M.brass, V(182.85, yt + 0.29, 1.26), V(182.85, yt + 0.24, 1.34), 0.012, 6);
-    b.cyl(M.black, V(182.85, yt + 0.36, 1.25), V(182.85, yt + 0.5, 1.22), 0.012, 6); b.sph(M.black, 0.022, 182.85, yt + 0.51, 1.22, 1, 1.4, 1, 8);
+    // Zapfhebel: beweglich in feature_interact.js
     // Shaker, Eiskübel mit Eis und Zange, Getränkekarte
     b.vcyl(M.alu, 0.033, 0.14, 182.62, yt, 1.45, 10, 0.038); b.vcyl(M.alu, 0.036, 0.05, 182.62, yt + 0.14, 1.45, 10, 0.016); b.sph(M.alu, 0.012, 182.62, yt + 0.195, 1.45, 1, 1, 1, 6);
     b.vcyl(M.alu, 0.075, 0.12, 181.86, yt, 1.42, 12, 0.088);

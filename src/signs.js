@@ -17,6 +17,15 @@ class Atlas {
   uv(cx, cy, w, h) { return [(cx + 1) / this.W, 1 - (cy + h - 1) / this.H, (cx + w - 1) / this.W, 1 - (cy + 1) / this.H]; }
   tag(t) { t = String(t || ''); if (!this.qbs.has(t)) this.qbs.set(t, new QuadBuf()); this.qb = this.qbs.get(t); }
   addTo(root, groups) {
+    // ungenutzte Zeilen abschneiden: der Atlas ist auf Vorrat angelegt, meist wird nur ein Teil belegt
+    const rows = Math.max(1, Math.ceil(Math.min(this.n, this.max) / this.cols)), H2 = Math.min(this.H, rows * this.ch);
+    if (H2 < this.H) {
+      const c = document.createElement('canvas'); c.width = this.W; c.height = H2; c.getContext('2d').drawImage(this.c, 0, 0);
+      const k = this.H / H2;
+      for (const qb of this.qbs.values()) for (let i = 1; i < qb.u.length; i += 2) qb.u[i] = 1 - (1 - qb.u[i]) * k;
+      this.c.width = this.c.height = 0; this.c = c; this.H = H2;
+    }
+    this.used = { n: this.n, w: this.W, h: this.H };
     const t = new THREE.CanvasTexture(this.c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     const mat = new THREE.MeshLambertMaterial({ map: t, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     for (const [tag, qb] of this.qbs) if (!qb.empty) (tag ? groups[tag] || root : root).add(new THREE.Mesh(qb.geo(), mat));
@@ -79,5 +88,5 @@ export function makeSigns() {
     if (!uv) { const [cx, cy] = G.cell(draw); uv = G.uv(cx, cy, 128, 128); cache.set('p|' + key, uv); }
     place(G.qb, uv, x, y, z, w, h, dir);
   }
-  return { sign, gauge, panel, tag(t) { A.tag(t); G.tag(t); }, finish(root, groups = {}) { A.addTo(root, groups); G.addTo(root, groups); } };
+  return { sign, gauge, panel, tag(t) { A.tag(t); G.tag(t); }, finish(root, groups = {}) { A.addTo(root, groups); G.addTo(root, groups); }, stats: () => ({ signs: A.used, gauges: G.used }) };
 }

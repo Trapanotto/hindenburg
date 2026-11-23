@@ -302,6 +302,13 @@ Legende: **grob falsch** / **leicht abweichend** / **passt**
 - Sitzplatzzahl im Speisesaal: Die Quellen widersprechen sich (28 laut Plan, 34, „alle 50“).
 - Zahl der Plätze in den Messen (24/12 nur laut de.wikipedia; das passt schlecht zur Raumgröße in [FOW]).
 
+## 9. Nachtrag 23.11.2026: Podest im vorderen B-Deck
+
+| Stelle | Befund | Quelle | Status | Modell |
+|---|---|---|---|---|
+| Podest +0,3 m unter Bar, Rauchsalon, Küche, Offiziersmesse (`decks.js` `YP = B_Y + 0.3`) | Fowlers Seitenriss zeigt den B-Deck-Boden als **durchgehend ebene Linie** von der Fallreep-Öffnung achtern bis zur Offiziersmesse vorn; Mannschafts- und Offiziersmesse stehen auf derselben Höhe, keine Stufe. Der Rumpfboden läuft darunter schräg nach vorn hoch, der Raum dazwischen ist Tragwerk | [FOWP] https://www.airships.net/wp-content/uploads/passenger-decks-profile.jpg (im Browser vergrößert betrachtet) | Podest **nicht belegt**, Quelle spricht dagegen (mittel: moderne Rekonstruktion) | **nicht geändert.** Grund: Mit der Rumpfkontur aus `hull.js` (nicht in diesem Auftrag änderbar) ist die halbe Innenbreite auf B_Y bei x 186 nur 2,5 m und bei x 187,7 nur 1,3 m; ohne Podest würden Rauchsalon und Offiziersmesse in der Hülle stecken. Im Code als Modellbehelf kommentiert. Abhilfe nur über die Rumpfkontur bzw. die Deckhöhe (siehe Abschnitt 1, „Folgerung für das Modell“) |
+| Schwelle/Stufen zwischen Kielgang und B-Deck | In [FOWP] nicht erkennbar | [FOWP] | unbelegt | unverändert |
+
 ## Quellenliste
 
 - airships.net, Passenger Decks: https://www.airships.net/hindenburg/interiors/

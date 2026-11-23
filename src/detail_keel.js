@@ -486,7 +486,8 @@ export default function (C) {
       for (const dx of [-0.11, 0.11]) { // Messerschalter
         const xs = xc + dx, opn = (c === 1 && dx > 0);
         b.box(X.porcelain, 0.1, 0.16, 0.025, xs, yE + 0.95, zf - 0.012);
-        const tip = opn ? V(xs, yE + 0.93, zf - 0.2) : V(xs, yE + 1.02, zf - 0.04);
+        if (opn) continue; // dieses Messer (Kielgangbeleuchtung) ist beweglich: feature_interact.js
+        const tip = V(xs, yE + 1.02, zf - 0.04);
         b.beam(X.copper, V(xs, yE + 0.88, zf - 0.03), tip, 0.012, 0.03);
         b.sph(M.black, 0.018, tip.x, tip.y, tip.z, 1, 1, 1, 6);
       }

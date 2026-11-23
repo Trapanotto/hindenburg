@@ -59,7 +59,10 @@ function tankFree(x, s) {
   return true;
 }
 /** Tanks am Kielgang. kind: 'fuel' Dieselöl, 'ballast' Haupt-Wasserballast (7 × 2000 kg, Lage bis auf Ring 77 unbelegt),
- *  'nb' Notballastsack (8 × 500 kg: je 4 an Ring 47 und Ring 218), 'oil' Schmieröl an jeder Maschinengondel. */
+ *  'nb' Notballastsack (8 × 500 kg: je 4 an Ring 47 und Ring 218), 'oil' Schmieröl an jeder Maschinengondel.
+ *  Belegt (research/gondel_mast.md, Nachtrag): Dieseltanks als zylindrische Leichtmetallbehälter beiderseits des Kielgangs,
+ *  „hinter der Offiziersunterkunft“ fast über die ganze Länge, untereinander verbunden, abwerfbar. Zahl und Einzelgröße unbelegt. */
+const FUEL_X1 = 203.4;   // Vorderkante der Dieseltank-Reihe = Achterwand der Offiziersunterkunft (Bucht 14)
 export const TANKS = (() => {
   const t = [];
   for (const x of [45.8, 48.2, 219.4, 221.6]) for (const s of [-1, 1]) t.push({ kind: 'nb', x, s });
@@ -72,6 +75,7 @@ export const TANKS = (() => {
     for (const s of [-1, 1]) {
       if (!tankFree(x, s)) continue;
       const ball = BALL.some(([bx, bs]) => bs === s && Math.abs(bx - x) < 0.3);
+      if (!ball && x > FUEL_X1) continue;                          // Dieseltanks nur achtern der Offiziersunterkunft (WOWA-R)
       t.push({ kind: ball ? 'ballast' : 'fuel', x, s });
     }
   }
@@ -166,7 +170,8 @@ export function buildKeel(C) {
   for (const s of [-1, 1]) {
     const a = Math.min(...fuelX) - 0.5;
     b.cyl(M.steel, V(a, ky(a) + 0.05, s * 0.56), V(156, ky(156) + 0.05, s * 0.56), 0.03, 5);
-    b.cyl(M.steel, V(192.5, ky(192.5) + 0.05, s * 0.56), V(231.5, ky(231.5) + 0.05, s * 0.56), 0.03, 5);
+    const fwd = fuelX.filter((x) => x > 190), c = fwd.length ? Math.max(...fwd) + 0.5 : 0;  // endet am vordersten Dieseltank
+    if (c > 192.5) b.cyl(M.steel, V(192.5, ky(192.5) + 0.05, s * 0.56), V(c, ky(c) + 0.05, s * 0.56), 0.03, 5);
   }
 
   // ================= Räume am Kielgang =================
@@ -418,7 +423,7 @@ export function buildKeel(C) {
   C.tp('Bugraum', 235.6, BOW.y, 0, 0);
 
   I('Kielgang', 'Der Kielgang lief als schmaler Laufsteg im dreieckigen Kielträger fast durch die ganze Länge des Schiffs; nur im Bereich der Fahrgastdecks (Ring 173–188) war er unterbrochen. An ihm lagen Treibstoff- und Ballasttanks, Fracht- und Posträume, Werkstatt, Elektrozentrale, die Quartiere der Besatzung und die Zugänge zu allen Gondeln. Wer danebentrat, stand auf nichts als der Stoffhülle.', 58, ky(58) + 1.5, 0.3);
-  I('Treibstoff und Ballast', 'Die Dieseltanks standen beiderseits des Kielgangs fast über die ganze Länge; sie waren untereinander verbindbar und konnten im Notfall abgeworfen werden. Die Gesamtmenge wird unterschiedlich angegeben – rund 60 bis 75 t, nach einer Quelle 88.000 Liter. Dazu kamen sieben Haupt-Ballasttanks mit je 2.000 kg Wasser und acht Notballastsäcke zu je 500 kg, je vier an Ring 47 und an Ring 218. Weil das Schiff durch den Verbrauch von rund einer halben Tonne Diesel je Stunde leichter wurde, musste unterwegs Gas abgeblasen werden. Zahl und Lage der einzelnen Tanks sind nicht überliefert.', 100, ky(100) + 1.5, 0.3);
+  I('Treibstoff und Ballast', 'Das Dieselöl lagerte in zylindrischen Leichtmetallbehältern beiderseits des Kielgangs, von der Offiziersunterkunft nach achtern fast über die ganze Länge. Sie waren untereinander verbunden, sodass sich das Schiff durch Umpumpen trimmen ließ, und hingen an Drähten, die man im Notfall durchtrennen konnte, um einen Tank abzuwerfen. Die Gesamtmenge wird unterschiedlich angegeben – rund 60 bis 75 t, nach einer Quelle 88.000 Liter. Dazu kamen sieben Haupt-Ballasttanks mit je 2.000 kg Wasser und acht Notballastsäcke zu je 500 kg, je vier an Ring 47 und an Ring 218. Weil das Schiff durch den Verbrauch von rund einer halben Tonne Diesel je Stunde leichter wurde, musste unterwegs Gas abgeblasen werden. Zahl und Größe der einzelnen Tanks und die Lage der Ballasttanks sind nicht überliefert; eine zeitgenössische Beschreibung nennt statt der sieben Tanks fünfzehn Ballastfässer.', 100, ky(100) + 1.5, 0.3);
   I('Notballast', 'Hier, an Ring 47, hingen vier der acht Notballastsäcke mit je 500 kg Wasser; vier weitere saßen vorn an Ring 218. Sie wurden vom Höhenruderstand der Führergondel aus mit einem Zug sofort entleert, um das Heck oder den Bug schnell zu erleichtern.', 47, ky(47) + 1.6, 0.3);
   I('Mannschaftsräume (Bucht 5)', 'In Bucht 5 zwischen Ring 62 und 77 lagen zwölf Kojen der Mannschaft in stoffbespannten Kammern beiderseits des Kielgangs. Gearbeitet wurde in Wachen rund um die Uhr; gegessen wurde in der Mannschaftsmesse auf dem B-Deck.', mid(RM.crew5b), ky(mid(RM.crew5b)) + 1.6, 0.25);
   I('Mannschaftsraum (Bucht 11)', 'Direkt hinter den Fahrgasträumen, in Bucht 11 zwischen Ring 156,5 und 173, schliefen 22 Mann in Doppelstockkojen. Mit den zwölf Kojen in Bucht 5 und den zwölf Offizierskojen ergibt das 46 Schlafplätze; eine andere Quelle nennt 54 Schlafplätze bei bis zu 61 Mann Besatzung – die Differenz ist ungeklärt.', mid(RM.crew11), ky(mid(RM.crew11)) + 1.6, -0.25);

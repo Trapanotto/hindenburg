@@ -293,6 +293,7 @@ function updateHud(C) {
 
 export function update(dt, C) {
   if (!S || !R) return;
+  C.sim.rpm = S.rpm; // Drehzahl je Motor für die Klangkulisse (feature_sound.js)
   dt = Math.min(Math.max(dt, 0), 0.1);
   const mast = C.sim.mode === 'mast';
   if (!mast) {

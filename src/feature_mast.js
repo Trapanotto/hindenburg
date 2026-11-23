@@ -2,8 +2,11 @@
 // Grundlage: research/gondel_mast.md, Abschnitt 7 und „Vorschlag Ankermast-Szene“.
 // Belegt: Wellman-Mast 75 ft hoch (ausfahrbar 160 ft), Unterbau 80 ft, ≈ 300 t, drei Eck-Fahrwerke auf weit gespurten Schienen,
 // Mastkopf mit Becher für den Bugkonus, Gleise von Hangar No. 1 zu Ankerkreisen, Heck 1936 per Lokomotive gezogen,
-// Hangar No. 1 294 × 107–110 × 68 m mit Toren auf Schienen. Unbelegt (hier abgeleitet): Grundriss des Mastes (dreieckig wegen
-// drei Eckfahrwerken), Durchmesser des Ankerkreises (aus Abstand Mast–Heckwagen), Torform und Fensterteilung der Halle.
+// Hangar No. 1 294 × 107–110 × 68 m mit Toren auf Schienen. Nachtrag (research/gondel_mast.md): „80 ft on a side“ (ZRS) und „drei
+// Ecken/drei Traktoren“ (WOWA-M) passen zu einem gleichseitigen Dreieck mit 24,4 m Seite (mittel, Grundriss nicht ausdrücklich
+// genannt); die Masten „überspannten zwei Gleispaare“ (NPS-Nominierung Hangar No. 1) – im Modell die zwei Mastgleise.
+// Unbelegt (hier abgeleitet): Durchmesser des Ankerkreises 1936/37 (aus Abstand Mast–Heckwagen; belegt sind nur 438 ft Radius
+// für die ZR-3, Ort nicht eindeutig, und 643 ft an anderen Navy-Basen), Lage der Gleise, Torform und Fensterteilung der Halle.
 import * as THREE from 'three';
 import { V, rng, canvasTex, QuadBuf } from './util.js';
 import { X_BOW, GROUND_Y, FALLREEP, rLin, hp, D2R } from './hull.js';
@@ -352,7 +355,7 @@ export default function (C) {
     track(XM + CB[0][0], 32, HZ1 + 4, [-40, 32]); track(XM + CB[2][0], 32, HZ1 + 4, [-40, 32]);
     track(XM, -RC - 2, HZ1 + 4, null);
     board('Mooring Out Circle', 37, -32, 0.5, 'x+', 'dark', 1.3);
-    info('Ankerkreis', 'Von Hangar No. 1 führten Gleise zu zwei Ankerkreisen („mooring-out circles“) für Mast, Heckträger und Heckwagen. Ihr Durchmesser ist nicht überliefert; im Modell ergibt er sich aus dem Abstand zwischen Mastkopf und Heckwagen unter der unteren Flosse (Radius rund 219 m). Auch die zwei geraden Mastgleise und das Heckgleis zur Halle sind in ihrer Lage abgeleitet.', 37.6, GY + 1.6, -30.4);
+    info('Ankerkreis', 'Von Hangar No. 1 führten Gleise zu zwei Ankerkreisen („mooring-out circles“) für Mast, Heckträger und Heckwagen. Die selbstfahrenden Masten überspannten zwei Gleispaare. Für die ZR-3 „Los Angeles“ ist in den 1920er Jahren ein Ankerkreis von 438 ft (≈ 133 m) Radius überliefert, an anderen Navy-Basen wurden später Kreise von 643 ft (≈ 196 m) gebaut; welchen Kreis die Hindenburg 1936/37 nutzte, ist nicht belegt. Im Modell ergibt sich der Radius aus dem Abstand zwischen Mastkopf und Heckwagen unter der unteren Flosse (rund 219 m); auch die Lage der Gleise zur Halle ist abgeleitet.', 37.6, GY + 1.6, -30.4);
 
     // =================================================================
     // Heck: beschwerter Wagen unter der unteren Flosse, Lokomotive auf dem Kreisgleis

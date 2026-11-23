@@ -184,6 +184,7 @@ Stand: 23.11.2026. Ausgewertet wurden nur öffentlich zugängliche Quellen. Es w
 | Ein- und Ausstieg | Treppe am hinteren Ende des Fahrgastbereichs, bei ≈ Ring 172–174 | [F-P] | niedrig |
 | Leiterschächte zum Axialgang | Ring 62, 123,5, 188 | [AN-K] | hoch |
 | Funk, Post, Fracht, Tanks | Am Kiel. Funk und Elektro liegen vorn. Für Post und Fracht ist keine Ringposition belegt. | [AN-K] | Lage hoch, Ring unbelegt |
+| Nachtrag 23.11.2026: Tanks, Fracht | Dieseltanks zylindrisch, Leichtmetall, beiderseits des Kielgangs achtern der Offiziersunterkunft; 15 Frachträume für 8,7 t. Einzelheiten und Widersprüche (Ballast 7 Tanks vs. 15 Fässer) in `gondel_mast.md`, Nachtrag | https://wondersofworldengineering.com/airship_design.html , https://www.wondersofworldaviation.com/rigid-airships.html , https://de.wikipedia.org/wiki/LZ_129 | mittel; Zahl/Größe der Tanks und Ringe der Räume weiter unbelegt |
 
 ## 7. Gaszellen
 

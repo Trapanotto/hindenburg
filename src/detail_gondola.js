@@ -191,10 +191,10 @@ export default function (C) {
     b.cyl(M.black, V(x, y, z), V(x, y, z + dz * 0.022), r, 10);
     b.cyl(M.brass, V(x, y, z), V(x, y, z + dz * 0.004), r * 1.45, 12);
   };
-  const switchBox = (x, y, z, nx) => { // Drehschalter auf einer Wand mit Normale ±x
+  const switchBox = (x, y, z, nx, noKnob) => { // Drehschalter auf einer Wand mit Normale ±x
     b.box(M.black, 0.02, 0.075, 0.075, x + nx * 0.01, y, z);
     b.cyl(M.enamel, V(x + nx * 0.02, y, z), V(x + nx * 0.032, y, z), 0.016, 8);
-    b.box(M.black, 0.012, 0.012, 0.04, x + nx * 0.038, y, z);
+    if (!noKnob) b.box(M.black, 0.012, 0.012, 0.04, x + nx * 0.038, y, z);
   };
   const extinguisher = (x, z, nx) => { // Feuerlöscher an Wand mit Normale ±x (x = Wandfläche)
     const cx = x + nx * 0.075;
@@ -533,7 +533,7 @@ export default function (C) {
   sign('Feuerlöscher', 204.326, F(0.76), -0.72, 0.035, 'x+', 'red');
   switchBox(204.28, F(0.82), 0.62, -1);
   switchBox(202.48, F(0.82), 0.46, -1);
-  switchBox(204.32, F(0.82), -0.6, 1);
+  switchBox(204.32, F(0.82), -0.6, 1, true); // Knebel des Landescheinwerfers: feature_interact.js
   { const z = -0.82, y = F(2.03);
     b.cyl(M.steel, V(204.32, F(2.15), z), V(204.4, F(2.15), z), 0.006, 5);
     b.cyl(M.steel, V(204.4, F(2.15), z), V(204.43, F(2.1), z), 0.005, 4);
@@ -785,9 +785,8 @@ export default function (C) {
   // Morsetaste
   { const x = 205.0, y = R(0.76), z = 2.44;
     b.bb(M.woodDark, x - 0.07, x + 0.07, y, y + 0.02, z - 0.035, z + 0.035);
-    b.beam(M.brass, V(x - 0.05, y + 0.035, z), V(x + 0.06, y + 0.04, z), 0.012, 0.008);
+    // Tasthebel und Knopf: beweglich in feature_interact.js
     b.cyl(M.brass, V(x - 0.02, y + 0.02, z), V(x - 0.02, y + 0.04, z), 0.01, 6);
-    b.cyl(M.black, V(x + 0.06, y + 0.044, z), V(x + 0.06, y + 0.056, z), 0.02, 10);
     for (const dx of [-0.055, 0.03]) b.vcyl(M.brass, 0.006, 0.015, x + dx, y + 0.02, z + 0.022, 6);
     b.cyl(M.rubber, V(x - 0.07, y + 0.01, z + 0.02), V(x - 0.2, y + 0.005, 2.54), 0.004, 4);
   }

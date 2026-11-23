@@ -12,7 +12,9 @@ const T = 0.08;                                   // Wanddicke
 const XA = 173.06, XF = 187.94;                    // Endschotte an Ring 173 und 188
 const AY = A_Y, AC = A_Y + A_H, BY = B_Y, BC = Math.min(B_Y + B_H, A_Y - 0.2);
 const BH = BC - BY;
-const YP = B_Y + 0.3;                              // Podest im vorderen B-Deck (Rumpfboden steigt zum Bug hin an)
+// Podest im vorderen B-Deck: Modellbehelf, historisch NICHT belegt. Fowlers Seitenriss [FOWP] zeigt einen durchgehend ebenen
+// B-Deck-Boden; das Podest ist nur nötig, weil die Rumpfkontur aus hull.js auf B_Y zum Bug hin zu schmal wird (hw(187,7) ≈ 1,3 m).
+const YP = B_Y + 0.3;
 const ZK = 0.5;                                    // Kielgang-Wände im B-Deck (Gang ≈ 1 m breit)
 // A-Deck: Längswände des Kabinenblocks (|z|)
 const ZO = 5.2, ZG = 3.3, ZGI = 2.4, ZM = 0.5;
@@ -358,7 +360,7 @@ function buildCabin(C, c) {
   for (const du of [0.15, 0.3]) b.cyl(M.brass, P(d1 + du, 1.72, 0.052), P(d1 + du, 1.72, 0.1), 0.008, 4); // Kleiderhaken
   b.vcyl(M.lamp, 0.09, 0.03, X((bu1 + L) / 2), y + H - 0.05, Zv(D / 2), 10); b.vcyl(M.alu, 0.11, 0.012, X((bu1 + L) / 2), y + H - 0.015, Zv(D / 2), 10);
   // Schiebetür (stoffbespannt) auf der Gangseite, offen
-  bx(Mc, d0 - 0.72, d0 - 0.02, 0.01, 1.98, -0.075, -0.055); bx(M.alu, d0 - 0.06, d0 - 0.03, 0.95, 1.1, -0.085, -0.075);
+  // Türblatt und Griff sind beweglich: feature_interact.js
   b.cyl(M.alu, P(d0 - 0.76, 2.03, -0.065), P(d1 + 0.04, 2.03, -0.065), 0.01, 4);
   C.sign(c.label, X((d0 + d1) / 2), y + 2.16, Zv(-0.055), 0.085, faceZ(-1), 'brass');
   // Navigation: freie Bodenfläche neben dem Bett und Türöffnung
@@ -757,7 +759,7 @@ export function buildDecks(C) {
   // Luftschleuse mit zwei Türen
   Z('Luftschleuse', XSL + 0.07, XBAR - 0.07, ZFL + 0.07, ZPA - 0.02, BY, plB);
   doorZ('Luftschleuse', XSL, ZFL + 0.07, ZPA - 0.03, BY); doorZ('Luftschleuse', XBAR, ZFL + 0.07, ZPA - 0.03, BY);
-  for (const x of [XSL, XBAR]) b.bb(M.wallBlue, x + 0.06, x + 0.09, BY + 0.02, BY + 1.98, ZPA - 0.75, ZPA - 0.05); // offene Türflügel
+  // die beiden Türflügel der Schleuse sind beweglich: feature_interact.js
   b.bb(M.alu, XBAR - 0.3, XBAR - 0.04, BY, BY + 0.15, ZFL + 0.07, ZPA - 0.03);  // Stufe zur Bar
   C.sign('Rauchsalon', XSL - 0.055, BY + 2.16, 2.67, 0.085, 'x-');
   lamp(C, 181.05, BC, 2.7);

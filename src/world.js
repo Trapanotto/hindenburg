@@ -89,7 +89,7 @@ export function buildWorld(scene, mobile) {
   const fill = new THREE.DirectionalLight(0xdfe8ff, 0.5); scene.add(fill);
 
   const api = {
-    idx: 1,
+    idx: 1, sun,
     set(i, M, renderer) {
       api.idx = i; const t = TIMES[i];
       U.top.value.set(t.top); U.hor.value.set(t.hor); api._base = new THREE.Vector3(...t.sun).normalize(); U.sunDir.value.copy(api._base); U.sunCol.value.set(t.sunCol);

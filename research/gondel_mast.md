@@ -269,6 +269,32 @@ Szenario Frankfurt Rhein-Main: Halle 275 m lang (Breite 52 oder 61 m, Höhe 51 o
 - Gesamtzahl der Bodenmannschaft am 6.5.1937.
 - Exakte Lage der Fallreeptreppe.
 
+## Nachtrag 23.11.2026: Nachrecherche der unbelegten Stellen
+
+Neue Quellen:
+
+| Kürzel | URL |
+|---|---|
+| WOWE | https://wondersofworldengineering.com/airship_design.html (Nachdruck „Airship Design and Equipment“, Zeitschriftenserie der 1930er, beschreibt LZ 129) |
+| ZRS-B | https://zrsthemovie.com/?p=3429 (American Scouting Perimeter: The Class B Mooring Bases) |
+| NPS-NR | https://npgallery.nps.gov/GetAsset/cda00530-6af7-42cd-bd7e-4468a995746a (National-Register-Nominierung Hangar No. 1, Lakehurst) |
+
+| Stelle | Befund | Quelle | Status | Modell |
+|---|---|---|---|---|
+| Treibstofftanks: Bauart, Lage | Zylindrische Behälter („Fässer“, „drums“) aus Leichtmetall beiderseits des Kielgangs; nach WOWA-R „in Abständen“, **hinter (achtern) der Offiziersunterkunft** fast über die ganze Länge; jeder Tank an Draht aufgehängt, im Notfall abwerfbar; Trimmen durch Umpumpen (Pumpe mit Windrad) | WOWE, WOWA-R, WP-DE („Aluminiumfässer an den seitlichen Laufgängen“) | **belegt (mittel)** | `keel.js`: Dieseltanks nur noch achtern x 203,4 (Achterwand Offiziersraum); der eine Tank bei x 230,5 Stb vor der Offiziersunterkunft entfällt. Infotext ergänzt |
+| Treibstofftanks: Zahl, Einzelgröße | Nur „große Zahl einzelner Tanks“ (Zeitung 1937); kein Einzelvolumen | Suche, paperspast (NZH 8.5.1937) | weiter **unbelegt** | 24 Tanks à ≈ 4 m³ (≈ 96 m³) passt größenordnungsmäßig zu 88.000 l (WP-DE); unverändert |
+| Haupt-Wasserballast | **Widerspruch:** AN-CC: 7 Haupttanks à 2.000 kg (Wortlaut geprüft). WOWE: „gewöhnlicher Ballast“ in 13 Fässern à 550 gal und 2 à 440 gal in den Laufgängen Bb/Stb (in Imperial-Gallonen ≈ 2.500 l bzw. 2.000 l, zusammen ≈ 36,5 t; mit 4 t Notballast ≈ 40 t, was zu den 40.000 l in WP-DE passt). Lage der Haupttanks in keiner Quelle | AN-CC, WOWE, WP-DE | Zahl **widersprüchlich**, Lage **unbelegt** | unverändert (7 Tanks nach AN-CC); Widerspruch im Infotext genannt |
+| Notballast | 4 Säcke im Bug, 4 im Heck, je 1.100 lb; Ring 47/218 | AN-CC, WOWA-R, WOWE („four bags … fore and aft, each half a ton“) | belegt (hoch) | passt |
+| Schmieröl | „near each engine gondola“ (WOWA-R); WOWE: „jede Maschinengondel hat einen elektrisch beheizten Öltank“ (also in der Gondel); Gesamtmenge 4.500 l (WP-DE) | WOWA-R, WOWE | Lage **widersprüchlich** (Rumpf neben der Gondel vs. in der Gondel) | unverändert (Tank im Kiel neben dem Gondelzugang) |
+| Frachträume | 15 Räume für zusammen 8,7 t Fracht; Zuladung ≈ 11 t Post, Fracht, Gepäck | WP-DE | Zahl belegt (mittel), Lage **unbelegt** | Modell zeigt nur einen Frachtraum; unverändert |
+| Post-, Funk-, Elektroraum, Werkstatt, Kapitänskajüte: Ring/Seite | Nur „am Kiel, Funk und Elektro vorn“ | AN-KEEL (erneut geprüft) | weiter **unbelegt** | unverändert |
+| Wellman-Mast: Grundriss | „80 feet on a side, 75 feet tall“ (ZRS); „drei Ecken“, „drei Traktoren an den Ecken“ (WOWA-M, Wortlaut geprüft); die Masten waren selbstfahrend und **überspannten zwei Gleispaare** (NPS-NR) | ZRS, WOWA-M, NPS-NR | gleichseitiges Dreieck 24,4 m: **mittel** (Form nicht ausdrücklich genannt, aber mit drei Ecken und „on a side“ stimmig); zwei Gleispaare **belegt** | passt (Dreieck 24,4 m auf zwei Mastgleisen); Kommentar angepasst |
+| Ankerkreis Lakehurst: Durchmesser | Ein Ankerkreis von **438 ft Radius** (≈ 133 m) für die ZR-3 „Los Angeles“ (Ort im Text nicht eindeutig, gleicher Kreis in Guantánamo); für Akron/Macon an anderen Basen Kreise von **643 ft Radius** (≈ 196 m); in Lakehurst wurde ein äußerer Kreis „vergrößert“ und ein Schienenkreis gebaut (ohne Maß). Welchen Kreis LZ 129 1936/37 nutzte, ist nirgends angegeben | ZRS-B, ZRS | Lakehurst 1936/37 weiter **unbelegt** | unverändert (Radius ≈ 219 m aus Schiffsgeometrie; Infotext nennt die belegten Vergleichswerte) |
+| Lage der Mastkreise | „direkt westlich von Hangar No. 1“, heute überdeckt | NPS-NR | belegt (hoch) | nicht geprüft gegen die Modell-Ausrichtung (Hangar im Modell quer bei z −330 … −624) |
+| Frankfurter Ankermast | keine Angaben gefunden | – | weiter **unbelegt** | – |
+
+`[Nachtrag]` In den Tabellen oben gilt damit: Zeile „Zahl/Größe der einzelnen Treibstofftanks“ weiter unbelegt; „Treibstoff: Tanks beidseits …“ jetzt durch WOWE gestützt; „Gleisanlage … Durchmesser unbelegt“ unverändert, aber Vergleichswerte vorhanden.
+
 Widersprüche im Überblick:
 1. Taue-Abwurfhöhe 6.5.1937: 90 m (WP-DIS, Bauer) vs. ≈ 55 m/180 ft (AN-DIS).
 2. Wasserrückgewinnung aus Abgas: ja (WP-CLASS, WOWA-R) vs. nein (AN-OPS).
@@ -278,3 +304,5 @@ Widersprüche im Überblick:
 6. Offiziersunterkunft: vor der Gondel (AN-KEEL) vs. über der Gondel (WOWA-R).
 7. Frankfurter Halle: 275 × 52 × 51 m vs. 275 × 61 × 55 m vs. 305 × 61 × 56 m.
 8. Treibstoffmenge (siehe oben).
+9. Haupt-Wasserballast: 7 Tanks à 2.000 kg (AN-CC) vs. 13 Fässer à 550 gal + 2 à 440 gal (WOWE).
+10. Schmieröltank: neben der Gondel im Rumpf (WOWA-R) vs. in der Gondel (WOWE).

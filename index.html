@@ -12,8 +12,8 @@
   button { font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:7px 11px; cursor:pointer; }
   button:hover { border-color:var(--acc); }
   button.on { background:var(--acc); color:#1a1612; border-color:var(--acc); }
-  #bar { position:fixed; top:max(8px,env(safe-area-inset-top)); right:8px; display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; max-width:calc(100% - 16px); z-index:5; }
-  #loc { position:fixed; left:12px; top:calc(max(8px,env(safe-area-inset-top)) + 46px); z-index:4; padding:5px 11px; background:var(--panel); border-left:3px solid var(--acc); border-radius:3px; letter-spacing:.03em; max-width:46vw; pointer-events:none; }
+  #bar { position:fixed; top:max(8px,env(safe-area-inset-top)); right:max(8px,env(safe-area-inset-right)); display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; max-width:calc(100% - 16px); z-index:5; }
+  #loc { position:fixed; left:max(12px,env(safe-area-inset-left)); top:calc(var(--barB,46px) + 6px); z-index:4; padding:5px 11px; background:var(--panel); border-left:3px solid var(--acc); border-radius:3px; letter-spacing:.03em; max-width:46vw; pointer-events:none; }
   #cross { position:fixed; left:50%; top:50%; width:6px; height:6px; margin:-3px; border-radius:50%; background:rgba(255,255,255,.55); box-shadow:0 0 0 1px rgba(0,0,0,.35); pointer-events:none; z-index:3; }
   #prompt { position:fixed; left:50%; bottom:22%; transform:translateX(-50%); z-index:6; padding:10px 16px; font-size:16px; border-color:var(--acc); display:none; white-space:nowrap; max-width:92vw; overflow:hidden; text-overflow:ellipsis; }
   #info { position:fixed; left:12px; bottom:12px; width:min(430px,calc(100vw - 24px)); max-height:52vh; overflow:auto; z-index:7; background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--acc); border-radius:6px; padding:14px 16px 16px; display:none; }
@@ -42,14 +42,29 @@
   #vert { position:fixed; right:14px; bottom:max(26px,env(safe-area-inset-bottom)); z-index:6; display:none; flex-direction:column; gap:8px; }
   #vert button { width:54px; height:54px; font-size:20px; touch-action:none; }
   body.touch #joy { display:block; } body.touch.fly #vert { display:flex; } body.touch #cross { display:none; }
-  body.touch.infoOpen #joy { opacity:.25; }
-  @media (max-width:760px) { #loc { top:calc(max(8px,env(safe-area-inset-top)) + 92px); max-width:70vw; } #bar button { padding:6px 9px; font-size:14px; } }
-  #load { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#10141c; z-index:30; letter-spacing:.2em; color:var(--dim); }
+  @media (max-width:760px) { #loc { max-width:70vw; } #bar button { padding:6px 9px; font-size:14px; } }
+  /* Touch: Infotafel oben unter der Leiste, damit Joystick und Aufforderung frei bleiben; quer rechts daneben */
+  body.touch #info { top:calc(var(--barB,46px) + 44px); bottom:auto; max-height:40vh; }
+  body.touch.infoOpen #prompt { display:none !important; }
+  @media (orientation:landscape) and (max-height:520px) {
+    body.touch #info { left:auto; right:max(12px,env(safe-area-inset-right)); width:min(420px,50vw); top:calc(var(--barB,46px) + 6px); max-height:calc(100% - var(--barB,46px) - 18px); }
+    #prompt { bottom:18%; } .card { padding:16px 18px; } h1 { font-size:26px; } .cols { margin:8px 0 12px; }
+  }
+  #load { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#10141c; z-index:30; color:var(--dim); padding:16px; }
+  #load .lbox { width:min(420px,100%); text-align:center; }
+  #load .lt { letter-spacing:.2em; text-transform:uppercase; color:var(--ink); margin-bottom:14px; }
+  #load .lbar { height:6px; border-radius:3px; background:rgba(243,234,216,.12); overflow:hidden; }
+  #load .lbar i { display:block; height:100%; width:2%; background:var(--acc); border-radius:3px; transition:width .25s ease-out; }
+  #load .lbar.wait i { width:30%; animation:lwait 1.4s ease-in-out infinite; }
+  @keyframes lwait { 0% { transform:translateX(-100%); } 100% { transform:translateX(340%); } }
+  #loadStep { margin-top:10px; font-size:14px; min-height:1.45em; }
+  #notice { z-index:40; } #notice .card { max-width:560px; } #notice button { margin-top:8px; }
 </style>
 </head>
 <body>
 <canvas id="c" tabindex="0"></canvas>
-<div id="load">LZ 129 WIRD AUFGEBAUT …</div>
+<div id="load" role="status" aria-live="polite"><div class="lbox"><div class="lt">LZ 129 wird aufgebaut</div><div class="lbar wait"><i id="loadBar"></i></div><div id="loadStep">Programm wird geladen …</div>
+  <noscript><p>Für die 3D-Rekonstruktion muss JavaScript eingeschaltet sein.</p></noscript></div></div>
 <div id="loc"></div>
 <div id="cross"></div>
 <div id="bar">
@@ -89,6 +104,13 @@
     <div class="plans"><div><h3>A-Deck</h3><div id="planA"></div></div><div><h3>B-Deck</h3><div id="planB"></div></div></div>
   </div>
 </div>
+<script>
+  // falls das Programm gar nicht erst startet (Ladefehler, sehr alter Browser): Hinweis statt endloser Ladeanzeige
+  addEventListener('error', function (e) {
+    var st = document.getElementById('loadStep'); if (!st || (e.target && e.target !== window && e.target.tagName !== 'SCRIPT')) return;
+    st.textContent = 'Das Programm konnte nicht gestartet werden. Bitte die Seite neu laden oder einen aktuellen Browser verwenden.';
+  }, true);
+</script>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>
