@@ -300,7 +300,8 @@ export default function (C) {
     const zs = (x, y, d) => s * (hw(x, y) - d);
     const xEnd = XF - 0.35;
     // Vorhänge an den Fensterpfosten (zusammengebunden) und Vorhangstange
-    for (let x = 174; x <= 187; x++) {
+    // (entfernt: Die Vorhänge lagen wie Bretter quer über den Schrägfenstern)
+    for (let x = 174; x < 174; x++) {
       if (nearRing(x, 0.3)) continue;
       const yT = AC - 0.1, yK = AY + 1.6, yU = AY + 1.15, cm = s < 0 ? M.curtain : M.curtainBlue;
       const pT = V(x, yT, zs(x, yT, 0.08)), pK = V(x, yK, zs(x, yK, 0.08)), pU = V(x, yU, zs(x, yU, 0.08));
@@ -322,8 +323,6 @@ export default function (C) {
     pts.forEach((x, i) => {
       const p = V(x, yr, zs(x, yr, 0.1));
       if (i % 3) { b.cyl(M.alu, p, V(x, yr, zs(x, yr, 0.025)), 0.01, 5); b.cyl(M.alu, V(x, yr, zs(x, yr - 0.03, 0.02)), V(x, yr, zs(x, yr - 0.03, 0.006)), 0.025, 8); }
-      b.cyl(M.alu, V(x, yr - 0.015, p.z), V(x, AY + 0.62, zs(x, AY + 0.62, 0.02)), 0.008, 5);
-      b.cyl(M.alu, V(x, AY + 0.62, zs(x, AY + 0.595, 0.02)), V(x, AY + 0.62, zs(x, AY + 0.595, 0.006)), 0.022, 8);
     });
     for (let i = 0; i < pts.length - 1; i++) {
       const xa = pts[i], xb = pts[i + 1];

@@ -45,8 +45,8 @@ export function makeMats() {
 
   const L = (color, map, wuv, o = {}) => { const m = new THREE.MeshLambertMaterial({ color, map: map || null, ...o }); if (wuv) m.userData.wuv = wuv; return m; };
   // Metalle und glänzende Flächen: spiegeln den Himmel (scene.environment), Rauheit bestimmt die Schärfe
-  const P = (color, o = {}) => new THREE.MeshStandardMaterial({ color, metalness: 0.65, roughness: 0.45, envMapIntensity: 0.32, ...o });
-  const G = (color, map, wuv, o = {}) => { const m = new THREE.MeshStandardMaterial({ color, map: map || null, metalness: 0, roughness: 0.5, envMapIntensity: 0.35, ...o }); if (wuv) m.userData.wuv = wuv; return m; };
+  const P = (color, o = {}) => new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.5, envMapIntensity: 0.2, ...o });
+  const G = (color, map, wuv, o = {}) => { const m = new THREE.MeshStandardMaterial({ color, map: map || null, metalness: 0, roughness: 0.6, envMapIntensity: 0.12, ...o }); if (wuv) m.userData.wuv = wuv; return m; };
 
   const M = {
     // Wände, Böden, Decken
@@ -58,25 +58,25 @@ export function makeMats() {
     carpetRed: L(0x7a3b33, carpet, 1), carpetBrown: L(0x6f5a44, carpet, 1), carpetBlue: L(0x3d5568, carpet, 1),
     canvas: L(0xcdbf9f, weave, 0.6, { side: THREE.DoubleSide }),
     // Möbel
-    alu: P(0xc2c8cf, { roughness: 0.38 }), aluDark: P(0x7d858d, { metalness: 0.3, roughness: 0.6, envMapIntensity: 0.18 }), steel: P(0x4b5157, { roughness: 0.5 }), brass: P(0xb9954a, { roughness: 0.3, metalness: 0.85, envMapIntensity: 0.6 }),
+    alu: P(0xc2c8cf, { roughness: 0.38 }), aluDark: P(0x8a8f8c, { metalness: 0, roughness: 0.85, envMapIntensity: 0.06 }) /* gestrichene Wandflächen: matt, nicht spiegelnd */, steel: P(0x4b5157, { roughness: 0.5 }), brass: P(0xb9954a, { roughness: 0.3, metalness: 0.85, envMapIntensity: 0.6 }),
     bronze: P(0x6b4a2a, { roughness: 0.45 }),
     wood: G(0x9a6a3c, wood, 1.2, { roughness: 0.55 }), woodDark: G(0x5a3a22, wood, 1.2, { roughness: 0.5 }), woodLight: G(0xc9a26b, wood, 1.2, { roughness: 0.55 }),
     upRed: G(0x9c3a2e, null, 0, { roughness: 0.75, envMapIntensity: 0.2 }), upBrown: G(0x6a4a34, null, 0, { roughness: 0.6, envMapIntensity: 0.3 }), upBlue: G(0x28384e, null, 0, { roughness: 0.5, envMapIntensity: 0.4 }), upGreen: G(0x4f6648, null, 0, { roughness: 0.75, envMapIntensity: 0.2 }),
     linen: L(0xf2efe6), blanket: L(0x8894a0), black: L(0x18181a), white: L(0xf4f4f0),
     crate: L(0xa58555, plank, 0.8), paper: L(0xefe8d2), rope: L(0xb7a57c), rubber: L(0x222222),
-    pigskin: G(0xd9b96a, null, 0, { roughness: 0.6 }), enamel: G(0xf3f3ee, null, 0, { roughness: 0.18, envMapIntensity: 0.6 }),
+    pigskin: G(0xd9b96a, null, 0, { roughness: 0.6 }), enamel: G(0xf3f3ee, null, 0, { roughness: 0.3, envMapIntensity: 0.25 }),
     trim: G(0x6e5c46, wood, 1.2, { roughness: 0.5 }), frame: P(0xaeb5bc, { roughness: 0.4 }), curtain: L(0xb59a68, weave, 0.12), curtainBlue: L(0x6f8494, weave, 0.12),
     plant: L(0x3f6a3a), pot: L(0x9a5a3a), red: G(0xb3261c, null, 0, { roughness: 0.35, envMapIntensity: 0.6 }), cork: L(0xa9895c), tarp: L(0x6f7466, weave, 0.3), leather: G(0x2a2420, null, 0, { roughness: 0.45, envMapIntensity: 0.5 }),
-    glassClear: new THREE.MeshStandardMaterial({ color: 0xdfeef2, transparent: true, opacity: 0.3, metalness: 0, roughness: 0.05, envMapIntensity: 1.2, depthWrite: false }),
+    glassClear: new THREE.MeshStandardMaterial({ color: 0xdfeef2, transparent: true, opacity: 0.25, metalness: 0, roughness: 0.1, envMapIntensity: 0.5, depthWrite: false }),
     shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
       map: canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 4, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.6, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }, { repeat: false }) }),
     navRed: new THREE.MeshBasicMaterial({ color: 0xff2a1a }), navGreen: new THREE.MeshBasicMaterial({ color: 0x22ff55 }), navWhite: new THREE.MeshBasicMaterial({ color: 0xffffee }),
     // Schiff
     plank: L(0xb89a6a, plank, 0.8), tank: P(0xaab2b9, { roughness: 0.5 }), sack: L(0x7a6a4c), hullSeam: L(0x8a8f96),
     lamp: new THREE.MeshBasicMaterial({ color: 0xfff1cc }),
-    glass: new THREE.MeshStandardMaterial({ color: 0xa9cbdb, transparent: true, opacity: 0.16, metalness: 0, roughness: 0.04, envMapIntensity: 1.3, side: THREE.DoubleSide, depthWrite: false }),
-    hullOut: new THREE.MeshStandardMaterial({ color: 0xb9bdc2, map: hullTex, metalness: 0.45, roughness: 0.55, envMapIntensity: 0.42 }),
-    hullOutDS: new THREE.MeshStandardMaterial({ color: 0xb9bdc2, metalness: 0.45, roughness: 0.55, envMapIntensity: 0.42, side: THREE.DoubleSide }),
+    glass: new THREE.MeshStandardMaterial({ color: 0xcfe2ea, transparent: true, opacity: 0.12, metalness: 0, roughness: 0.08, envMapIntensity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
+    hullOut: new THREE.MeshStandardMaterial({ color: 0xb9bdc2, map: hullTex, metalness: 0.35, roughness: 0.62, envMapIntensity: 0.3 }),
+    hullOutDS: new THREE.MeshStandardMaterial({ color: 0xb9bdc2, metalness: 0.35, roughness: 0.62, envMapIntensity: 0.3, side: THREE.DoubleSide }),
     hullIn: new THREE.MeshLambertMaterial({ color: 0xc9b891, map: hullTex, emissive: 0x574a34, side: THREE.BackSide }),
     truss: new THREE.MeshLambertMaterial({ color: 0xffffff, map: truss, alphaTest: 0.35, side: THREE.DoubleSide }),
     cell: new THREE.MeshLambertMaterial({ color: 0xdccb9e, emissive: 0x3a3222, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }),

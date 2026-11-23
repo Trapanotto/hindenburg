@@ -137,6 +137,15 @@ export function buildHull(root, M, b, quality) {
   }
   const gm = new THREE.Mesh(glass.geo(), M.glass); gm.renderOrder = 3; root.add(gm);
 
+  // Innenverkleidung der Passagierdecks: stoffbespannte Wandfläche vor der Hülle zwischen B-Deck-Fenstern und A-Deck-Fenstern
+  // (sonst wirkt die durchscheinende Hülle dort wie eine fehlende Wand)
+  const lining = new QuadBuf(), LJ = WIN_B[0] + 1, K = 0.992;
+  for (let i = 0; i < ST.length - 1; i++) {
+    const x0 = ST[i], x1 = ST[i + 1]; if (x0 < 173 - 1e-3 || x1 > 188 + 1e-3) continue;
+    for (const j of [LJ, 35 - LJ]) lining.quad(hp(x0, j * 10 + 10, K), hp(x1, j * 10 + 10, K), hp(x1, j * 10, K), hp(x0, j * 10, K));
+  }
+  b.add(M.wallCream, lining.geo());
+
   // ---------- Gerippe: Ringe und Längsträger ----------
   const tq = new QuadBuf();
   for (let i = 1; i < ST.length - 1; i++) {
