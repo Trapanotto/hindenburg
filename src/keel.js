@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { V } from './util.js';
+import { lean } from './decks.js';
 import { ST, rLin, keelY, hw, hp, ENG, GX0, GX1, G_Y, G_YC, G_HW, D2R, finT } from './hull.js';
 
 // ======================================================================
@@ -95,7 +96,7 @@ const mm = (a, c) => [Math.min(a, c), Math.max(a, c)];
 export const ROOM_H = 2.1;
 
 export function buildKeel(C) {
-  const { b, M, nav, root } = C;
+  const { M, nav, root } = C, b = lean(C.b);
   const I = C.info, ky = keelY;
 
   // ---------- Öffnungen im Kielganggeländer: [x0, x1, Seite] ----------
@@ -236,11 +237,12 @@ export function buildKeel(C) {
   for (const x of [A0, A1]) b.cyl(M.alu, V(x, AY + 1.0, -0.46), V(x, AY + 1.0, 0.46), 0.014, 5); // Endsperre
 
   // Leiterschächte Kielgang ↔ Axialgang
+  const hoopL = new THREE.TorusGeometry(0.42, 0.012, 4, 14);
   for (const L of LADDERS) {
     const x = L.x, y0 = ky(x), z = LADDER_Z;
     for (const dx of [-0.2, 0.2]) b.cyl(M.alu, V(x + dx, y0, z), V(x + dx, AY + 1.0, z), 0.02, 6);
     for (let y = y0 + 0.3; y < AY + 0.9; y += 0.32) b.cyl(M.alu, V(x - 0.2, y, z), V(x + 0.2, y, z), 0.013, 5);
-    for (let y = y0 + 2.2; y < AY - 0.4; y += 1.6) b.add(M.alu, new THREE.TorusGeometry(0.42, 0.012, 4, 14), new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(x, y, z - 0.25));
+    for (let y = y0 + 2.2; y < AY - 0.4; y += 1.6) b.add(M.alu, hoopL, new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(x, y, z - 0.25));
     C.portal('Leiter (Ring ' + L.ring + ')', V(x, y0, 0), V(x, AY, 0), 'hinauf zum Axialgang', 'hinab zum Kielgang');
   }
 

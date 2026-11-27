@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { QuadBuf, V, canvasTex } from './util.js';
 
 // ---------- Hauptmaße LZ 129 ----------
@@ -135,7 +136,10 @@ export function buildHull(root, M, b, quality) {
     for (let k = 0; k <= n; k++) { const x = x0 + (x1 - x0) * k / n; b.beam(M.alu, hp(x, a0), hp(x, a1), 0.05); }
     b.beam(M.alu, hp(x0, a0 + 5), hp(x1, a0 + 5), 0.03);
   }
-  const gm = new THREE.Mesh(glass.geo(), M.glass); gm.renderOrder = 3; root.add(gm);
+  // eigene Kopie mit einem Zeichendurchgang: ebene Scheiben, von jedem Standpunkt aus nur eine Seite sichtbar – zwei Durchgänge
+  // (erst Rück-, dann Vorderseiten) ergäben dasselbe Bild mit doppelt so vielen Zeichenaufrufen
+  const gMat = M.glass.clone(); gMat.forceSinglePass = true;
+  const gm = new THREE.Mesh(glass.geo(), gMat); gm.renderOrder = 3; root.add(gm);
 
   // Innenverkleidung der Passagierdecks: stoffbespannte Wandfläche vor der Hülle zwischen B-Deck-Fenstern und A-Deck-Fenstern
   // (sonst wirkt die durchscheinende Hülle dort wie eine fehlende Wand)
@@ -244,7 +248,7 @@ function buildExterior(root, M, b) {
         let u0 = i / nx, u1 = (i + 1) / nx; if (side < 0) { u0 = 1 - u0; u1 = 1 - u1; }
         q.quad(P(xa, a0), P(xb, a0), P(xb, a1), P(xa, a1), u0, k / na, u1, (k + 1) / na);
       }
-      const m = new THREE.Mesh(q.geo(), new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+      const m = new THREE.Mesh(q.geo(), new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, forceSinglePass: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
       m.renderOrder = 1; if (year) m.userData.year = year; root.add(m);
     }
   };
@@ -266,11 +270,10 @@ export function buildProps(root, M) {
   const props = [];
   for (const e of ENG) {
     const g = new THREE.Group(); g.position.set(e.c.x - 3.75, e.c.y, e.c.z);
-    for (let k = 0; k < 4; k++) {
-      const bl = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.0, 0.42), M.woodDark);
-      bl.position.y = 1.5; bl.rotation.y = 0.35;
-      const arm = new THREE.Group(); arm.rotation.x = k * Math.PI / 2; arm.add(bl); g.add(arm);
-    }
+    // vier Blätter als EIN Mesh (gleiche Lage wie zuvor: je Blatt um y 0,35 verdreht, 1,5 m vom Mittelpunkt, Arme je 90° um x)
+    const blades = [];
+    for (let k = 0; k < 4; k++) blades.push(new THREE.BoxGeometry(0.1, 3.0, 0.42).rotateY(0.35).translate(0, 1.5, 0).rotateX(k * Math.PI / 2));
+    g.add(new THREE.Mesh(mergeGeometries(blades), M.woodDark));
     const disc = new THREE.Mesh(new THREE.CircleGeometry(3.0, 24), new THREE.MeshBasicMaterial({ color: 0x5a4632, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
     disc.rotation.y = Math.PI / 2; g.add(disc);
     root.add(g); props.push(g);

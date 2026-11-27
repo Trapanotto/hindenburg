@@ -50,6 +50,64 @@ const YTH = maxChord(173, 2.4, 3.15) + 0.06;       // Schwelle zum Kabinenanbau 
 const YF = maxChord(188, 0, 0.55) + 0.08;          // Kielgang vorn über Ring 188
 const tipY = (x) => -(rLin(x) - 0.45) * Math.cos(10 * Math.PI / 180); // Innenkante Längsträger 10°
 
+// ---------- Segmentzahlen nach Größe ----------
+// Runde Kleinteile wurden oft mit 8–20 Segmenten bestellt, auch wenn sie nur Millimeter dick sind. lean(b) liefert
+// denselben Builder, setzt aber die Segmentzahl so, dass die Abweichung vom echten Kreis (Pfeilhöhe) höchstens SEG_TOL
+// beträgt – nie mehr als bestellt und nie unter 6 (bzw. der bestellten Zahl, wenn die kleiner ist). Große Teile bleiben
+// unverändert. Kugeln bekommen dabei weniger Breitenkreise (die Vorlage in util.js nimmt mindestens 6), Ringe einen
+// dünneren Rohrquerschnitt (4–6 statt immer 6 Ecken). Dünne lange Stäbe verlieren ihre (verdeckten) Deckflächen.
+const SEG_TOL = 0.002;
+const segFor = (r, req, min = 6) => {
+  if (!(r > 0) || req <= min) return req;
+  const c = 1 - SEG_TOL / r;
+  const n = c <= 0 ? min : Math.ceil(Math.PI / Math.acos(c) - 0.2);
+  return Math.max(min, Math.min(req, n));
+};
+const LEAN = new WeakMap(), GEO = new Map();
+const geoOnce = (key, make) => { let g = GEO.get(key); if (!g) { g = make(); if (g.index) g = g.toNonIndexed(); GEO.set(key, g); } return g; };
+const OPEN_CAPS = true, CAP_R = 0.015, CAP_L = 12;
+const _lm = new THREE.Matrix4(), _lv = new THREE.Vector3(), _lq = new THREE.Quaternion(), _ly = new THREE.Vector3(0, 1, 0);
+const _ld = new THREE.Vector3(), _lp = new THREE.Vector3(), _la = new THREE.Vector3(), _lb = new THREE.Vector3();
+export function lean(B) {
+  let w = LEAN.get(B); if (w) return w;
+  const cyl = (mat, a, c, r, seg, r2, open = false) => {
+    const rm = Math.max(r, r2), n = segFor(rm, seg), len = OPEN_CAPS || open ? a.distanceTo(c) : 0;
+    // dünne, lange Stäbe ohne Deckflächen (wie die Rohre in detail_exterior): die Enden stecken fast immer in
+    // Anschlussteilen und wären höchstens als Pünktchen zu sehen
+    if (r <= 0 || len < 1e-5 || (!open && (!OPEN_CAPS || rm > CAP_R || len < CAP_L * rm))) return B.cyl(mat, a, c, r, n, r2);
+    const k = r2 / r, g = geoOnce('c|' + n + '|' + k, () => new THREE.CylinderGeometry(k, 1, 1, n, 1, true));
+    _lq.setFromUnitVectors(_ly, _ld.subVectors(c, a).multiplyScalar(1 / len));
+    _lm.compose(_lp.addVectors(a, c).multiplyScalar(0.5), _lq, _lv.set(r, len, r));
+    return B.add(mat, g, _lm);
+  };
+  const own = {
+    cyl: (mat, a, c, r = 0.03, seg = 8, r2 = r) => cyl(mat, a, c, r, seg, r2),
+    vcyl: (mat, r, h, x, y, z, seg = 12, r2 = r) => cyl(mat, _la.set(x, y, z), _lb.set(x, y + h, z), r, seg, r2),
+    /** Rohr ohne Deckflächen: für durchlaufende Leitungen und Seile, deren Enden in Flanschen oder im nächsten Stück stecken */
+    tube: (mat, a, c, r = 0.03, seg = 8, r2 = r) => cyl(mat, a, c, r, seg, r2, true),
+    sph: (mat, r, x, y, z, sx = 1, sy = 1, sz = 1, seg = 12) => {
+      // Kügelchen unter 8 mm (Nieten, Knöpfchen) reichen mit zwei Breitenkreisen
+      const rm = r * Math.max(sx, sy, sz), n = segFor(r * Math.max(sx, sz), seg), rows = Math.max(rm <= 0.008 ? 2 : 4, Math.ceil(segFor(r * sy, seg) / 2));
+      if (rows >= Math.max(6, seg >> 1) && n === seg) return B.sph(mat, r, x, y, z, sx, sy, sz, seg); // wie bisher
+      const g = geoOnce('s|' + n + '|' + rows, () => new THREE.SphereGeometry(1, n, rows));
+      return B.add(mat, g, _lm.makeScale(sx * r, sy * r, sz * r).setPosition(x, y, z));
+    },
+    torus: (mat, R, r, x, y, z, axis = 'y', seg = 16) => {
+      const n = segFor(R, seg, 8), rad = segFor(r, 6, 4);   // Querschnitt nie unter 4 Ecken (dünne Zierränder bleiben sichtbar)
+      if (n === seg && rad === 6) return B.torus(mat, R, r, x, y, z, axis, seg);
+      // wie Builder.torus: Ring in der xy-Ebene, auf die Achse gedreht, mit R skaliert
+      _lm.identity();
+      if (axis === 'y') _lm.makeRotationX(Math.PI / 2); else if (axis === 'x') _lm.makeRotationY(Math.PI / 2);
+      _lm.scale(_lv.set(R, R, R)).setPosition(x, y, z);
+      const g = geoOnce('t|' + n + '|' + rad + '|' + r / R, () => new THREE.TorusGeometry(1, r / R, rad, n));
+      return B.add(mat, g, _lm);
+    },
+  };
+  w = new Proxy(B, { get(t, k) { if (k in own) return own[k]; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+  LEAN.set(B, w);
+  return w;
+}
+
 /** Startpunkt: Backbord-Promenade des A-Decks, Blick zum Bug */
 export const START = [176.4, A_Y, -9.6, 0];
 
@@ -188,14 +246,14 @@ function vquad(qb, x, y0, y1, za, zb, n = 6) {
   }
 }
 function railZ(C, x, z0, z1, y) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   b.cyl(M.alu, V(x, y + 0.9, z0), V(x, y + 0.9, z1), 0.022, 6); b.cyl(M.alu, V(x, y + 0.45, z0), V(x, y + 0.45, z1), 0.014, 6);
   const n = Math.max(1, Math.round(Math.abs(z1 - z0) / 1.0));
   for (let i = 0; i <= n; i++) b.vcyl(M.alu, 0.018, 0.9, x, y, z0 + (z1 - z0) * i / n, 6);
   nav.block(x - 0.04, x + 0.04, z0, z1, y, y + 1);
 }
 function railX(C, z, x0, x1, y) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   b.cyl(M.alu, V(x0, y + 0.9, z), V(x1, y + 0.9, z), 0.022, 6); b.cyl(M.alu, V(x0, y + 0.45, z), V(x1, y + 0.45, z), 0.014, 6);
   const n = Math.max(1, Math.round((x1 - x0) / 1.0));
   for (let i = 0; i <= n; i++) b.vcyl(M.alu, 0.018, 0.9, x0 + (x1 - x0) * i / n, y, z, 6);
@@ -204,7 +262,7 @@ function railX(C, z, x0, x1, y) {
 
 // ---------- Möbel (Exporte) ----------
 export function chair(C, x, y, z, ry, up, arm = false) {
-  const { b, M } = C;
+  const { M } = C, b = lean(C.b);
   b.at(x, y, z, ry, () => {
     const w = arm ? 0.56 : 0.44;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.vcyl(M.alu, 0.014, sz < 0 ? (arm ? 0.82 : 0.86) : 0.44, sx * (w / 2 - 0.02), 0, sz * 0.2, 5);
@@ -218,17 +276,17 @@ export function chair(C, x, y, z, ry, up, arm = false) {
   });
 }
 export function table(C, x, y, z, w, d, top, h = 0.74, block = true) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   b.shadow(M.shadow, x, y, z, w + 0.5, d + 0.5);
   b.box(M.alu, w - 0.1, 0.05, d - 0.1, x, y + h - 0.04, z);
   b.box(top, w, 0.035, d, x, y + h, z);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.vcyl(M.alu, 0.018, h, x + sx * (w / 2 - 0.06), y, z + sz * (d / 2 - 0.06), 6);
   if (block) nav.block(x - w / 2, x + w / 2, z - d / 2, z + d / 2, y, y + 1);
 }
-export function lamp(C, x, y, z) { C.b.vcyl(C.M.lamp, 0.22, 0.04, x, y - 0.05, z, 14); C.b.vcyl(C.M.alu, 0.25, 0.015, x, y - 0.015, z, 14); }
+export function lamp(C, x, y, z) { const b = lean(C.b); b.vcyl(C.M.lamp, 0.22, 0.04, x, y - 0.05, z, 14); b.vcyl(C.M.alu, 0.25, 0.015, x, y - 0.015, z, 14); }
 
 function roundTable(C, x, y, z, r, top, h = 0.74, block = true) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   b.shadow(M.shadow, x, y, z, 2 * r + 0.5, 2 * r + 0.5);
   b.vcyl(top, r, 0.035, x, y + h - 0.035, z, 18);
   b.vcyl(M.alu, 0.035, h - 0.035, x, y, z, 8);
@@ -293,7 +351,7 @@ function balloonTex(seed) {
 // ---------- Kabine (vollständig eingerichtet) ----------
 // Lokales System: u längs x ab der Bettwand, v quer ab der Gangwand (zur Rückwand hin).
 function buildCabin(C, c) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   const y = c.y, H = c.deck === 'A' ? A_H : BH, L = c.x1 - c.x0;
   const su = c.bedAt === 'x0' ? 1 : -1, ub = su > 0 ? c.x0 : c.x1;
   const zb = c.slope ? Math.sign(c.zc) * c.zb : c.zb;
@@ -370,7 +428,7 @@ function buildCabin(C, c) {
 
 // =====================================================================
 export function buildDecks(C) {
-  const { b, M, nav, root } = C;
+  const { M, nav, root } = C, b = lean(C.b);
   const I = C.info;
   TR = { trim: M.trim, frame: M.frame };
   const wallDS = new THREE.MeshLambertMaterial({ color: 0xe4d9be, side: THREE.DoubleSide });

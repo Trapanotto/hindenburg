@@ -80,7 +80,8 @@ export default function (C) {
     const pm = glowMat(0xffd9a0); const pl = pool ? mk(disc(pool[3]), pm, parent, pool[0], pool[1], pool[2]) : null;
     const s = { on: 1, v: 1 };
     act(() => `${name} ${s.on ? 'ausschalten' : 'einschalten'}`, apos, () => { s.on ^= 1; click(0, 2600); }, range);
-    E.upd.push((dt) => { s.v = toward(s.v, s.on, dt * 6); bulb.material = s.v > 0.5 ? M.lamp : mDark; if (pl) { pm.opacity = 0.16 * s.v; pl.visible = s.v > 0.01; } });
+    let last = -1; // zuletzt angewendeter Pegel: Material und Lichtfleck nur bei Änderung
+    E.upd.push((dt) => { s.v = toward(s.v, s.on, dt * 6); if (s.v === last) return; last = s.v; bulb.material = s.v > 0.5 ? M.lamp : mDark; if (pl) { pm.opacity = 0.16 * s.v; pl.visible = s.v > 0.01; } });
   };
 
   // ===================== A-DECK =====================
@@ -103,7 +104,8 @@ export default function (C) {
     mk(new THREE.PlaneGeometry(W - 0.05, L - 0.05).translate(0, -L / 2, 0), M.glass, rot).renderOrder = 3;
     const st = { o: 0, v: 0 };
     act(() => `Fenster ${st.o ? 'schließen' : 'öffnen'}`, tm.clone().lerp(bm, 0.6).addScaledVector(out, -0.12), () => { st.o ^= 1; click(0, 900); }, 2.1);
-    E.upd.push((dt) => { st.v = toward(st.v, st.o, dt * 0.9); rot.rotation.x = -sm(st.v) * 22 * D; });
+    let last = -1;
+    E.upd.push((dt) => { st.v = toward(st.v, st.o, dt * 0.9); if (st.v === last) return; last = st.v; rot.rotation.x = -sm(st.v) * 22 * D; });
   }
 
   // ---- Flügel 1936 (decks.js: b.at(181.8, AY, 6.95), Korpus-Oberkante +1.0; Notenpult bei z +0.16…+0.2)
@@ -119,8 +121,9 @@ export default function (C) {
       [[67, 0], [72, 0.3], [71, 0.45], [72, 0.6], [74, 0.9], [76, 1.2], [55, 0], [64, 0.3], [64, 0.6], [59, 0.9], [65, 1.2]],
       [[57, 0], [60, 0.12], [64, 0.24], [69, 0.36], [72, 0.6], [45, 0.6], [64, 0.6]]];
     act(() => 'Flügel anschlagen' + (ac() ? '' : ' (Ton ist aus)'), V(181.8, AY + 0.8, 7.38), () => { for (const [n, t] of PHR[st.k]) pianoNote(n, t, st.o ? 0.08 : 0.055); st.k = (st.k + 1) % PHR.length; }, 1.4, 1936);
+    let last = -1;
     E.upd.push((dt) => {
-      st.v = toward(st.v, st.o, dt * 0.7); const a = sm(st.v) * 38 * D; lid.rotation.z = a;
+      st.v = toward(st.v, st.o, dt * 0.7); if (st.v === last) return; last = st.v; const a = sm(st.v) * 38 * D; lid.rotation.z = a;
       stick.visible = a > 3 * D;
       if (stick.visible) { tmp.set(-0.75 + 0.95 * Math.cos(a) - 0.3, 0.02 + 0.95 * Math.sin(a), 0); stick.scale.y = tmp.length(); stick.quaternion.setFromUnitVectors(up, tmp.normalize()); }
     });
@@ -200,8 +203,9 @@ export default function (C) {
       act(() => `Kabinentür ${d.name} ${d.o ? 'öffnen' : 'schließen'}`, V((d.r.door[0] + d.r.door[1]) / 2, d.y + 1.05, d.zc - d.sv * 0.12), () => { d.o ^= 1; hiss(0, 0.5, { f: 900, vol: 0.025, atk: 0.1 }); }, 1.4, d.year);
     });
     E.upd.push((dt) => {
-      let ch = E.doors.full; E.doors.full = false;
-      list.forEach((d, k) => { if (d.v !== d.o) { d.v = toward(d.v, d.o, dt * 1.4); ch = true; place(d, k); } else if (ch) place(d, k); });
+      // Türen mit geändertem Stand neu setzen; ruhende nur, wenn Jahr oder Modus gewechselt haben (E.doors.full)
+      const full = E.doors.full; E.doors.full = false; let ch = full;
+      for (let k = 0; k < list.length; k++) { const d = list[k]; if (d.v !== d.o) { d.v = toward(d.v, d.o, dt * 1.4); ch = true; place(d, k); } else if (full) place(d, k); }
       if (ch) { for (const c in inst) inst[c].im.instanceMatrix.needsUpdate = true; hIm.instanceMatrix.needsUpdate = true; }
     });
     E.doors.full = true;
@@ -217,7 +221,8 @@ export default function (C) {
       mk(mergeGeometries([box(0.1, 0.03, 0.03, 0, 1.0 - (y0 - BY), -w + 0.08), box(0.008, 0.16, 0.06, 0.05, 1.0 - (y0 - BY), -w + 0.08), box(0.008, 0.16, 0.06, -0.05, 1.0 - (y0 - BY), -w + 0.08)]), M.brass, piv);
       const st = { o: 0, v: 0 };
       act(() => `Schleusentür ${nm} ${st.o ? 'schließen' : 'öffnen'}`, V(x, BY + 1.1, 2.7), () => { st.o ^= 1; hiss(0.1, 0.18, { f: 400, vol: 0.05, type: 'lowpass' }); }, 1.5);
-      E.upd.push((dt) => { st.v = toward(st.v, st.o, dt * 1.2); piv.rotation.y = sg * sm(st.v) * 88 * D; });
+      let last = -1;
+      E.upd.push((dt) => { st.v = toward(st.v, st.o, dt * 1.2); if (st.v === last) return; last = st.v; piv.rotation.y = sg * sm(st.v) * 88 * D; });
     });
   }
   // ---- Rauchsalon: elektrischer Anzünder (detail_bdeck.js: Bakelitgriff 183.7, YP+0.9…1.02, z 0.635; Glühspitze unten)
@@ -226,7 +231,7 @@ export default function (C) {
     const st = { t: -1 };
     act(() => (st.t >= 0 ? 'Anzünder glüht …' : 'Elektrischen Anzünder drücken'), V(183.7, YP + 0.96, 0.66), () => { if (st.t < 0) { st.t = 0; click(0, 1500); hiss(0.05, 4, { f: 5000, vol: 0.012, atk: 0.4 }); } }, 1.4);
     E.upd.push((dt) => {
-      if (st.t < 0) { glow.visible = false; return; }
+      if (st.t < 0) { if (glow.visible) glow.visible = false; return; }
       st.t += dt; const k = Math.min(1, st.t / 0.8) * Math.min(1, Math.max(0, (5 - st.t) / 1.2));
       glow.visible = true; gm.opacity = 0.9 * k * (0.85 + 0.15 * Math.sin(st.t * 23)); glow.scale.setScalar(0.7 + 0.5 * k);
       if (st.t > 5) st.t = -1;
@@ -262,7 +267,8 @@ export default function (C) {
     for (const [px, pz] of [[185.05, -2.2], [184.75, -1.35]]) { const m = basic(0x141414); mats.push(m); mk(disc(0.105), m, gB, px, YP + 0.9135, pz); }
     const st = { o: 0, v: 0 };
     act(() => `Herd: zwei Kochplatten ${st.o ? 'ausschalten' : 'einschalten'}`, V(184.52, YP + 0.79, -1.85), () => { st.o ^= 1; click(0, 1200); }, 1.6);
-    E.upd.push((dt) => { st.v = toward(st.v, st.o, dt / (st.o ? 7 : 12)); const k = sm(st.v); for (const m of mats) m.color.lerpColors(off, on, k); });
+    let last = -1;
+    E.upd.push((dt) => { st.v = toward(st.v, st.o, dt / (st.o ? 7 : 12)); if (st.v === last) return; last = st.v; const k = sm(st.v); for (const m of mats) m.color.lerpColors(off, on, k); });
   }
   // ---- Dusche (decks.js: Brause 177.4, BY+1.97, z −0.85; Wanne bis BY+0.1; Ventile detail_bdeck.js bei 176.86/177.14, BY+1.2, z −0.6)
   {
@@ -278,11 +284,12 @@ export default function (C) {
     }, 1.8);
     E.upd.push((dt) => {
       st.v = toward(st.v, st.o, dt * 2); lm.opacity = 0.55 * st.v; water.visible = st.v > 0.01; if (!water.visible) return;
-      drops.forEach((q, i) => {
+      for (let i = 0; i < drops.length; i++) {
+        const q = drops[i];
         q.p = (q.p + dt * 1.6 * q.s) % 1; const y = top - q.p * (top - bot), sp = q.d * (1 + 1.6 * q.p);
-        const x = 177.4 + Math.cos(q.a) * sp, z = -0.85 + Math.sin(q.a) * sp, l = Math.min(0.14, top - y + 0.001);
-        pos.set([x, y, z, x, y + l, z], i * 6);
-      });
+        const x = 177.4 + Math.cos(q.a) * sp, z = -0.85 + Math.sin(q.a) * sp, l = Math.min(0.14, top - y + 0.001), j = i * 6;
+        pos[j] = x; pos[j + 1] = y; pos[j + 2] = z; pos[j + 3] = x; pos[j + 4] = y + l; pos[j + 5] = z; // Tropfen direkt in den Puffer
+      }
       geo.attributes.position.needsUpdate = true;
     });
   }
@@ -312,7 +319,8 @@ export default function (C) {
     const beam = mk(new THREE.CylinderGeometry(3.2, 0.11, 40, 18, 1, true).translate(0, 20, 0), bm, C.root); beam.position.copy(p1); beam.quaternion.setFromUnitVectors(up, dir); beam.renderOrder = 4;
     const st = { o: 0, v: 0 };
     act(() => `Landescheinwerfer ${st.o ? 'ausschalten' : 'einschalten'}`, V(204.36, F(0.82), -0.6), () => { st.o ^= 1; click(0, 1000); }, 1.4);
-    E.upd.push((dt) => { st.v = toward(st.v, st.o, dt * 3); knob.rotation.x = sm(st.v) * 90 * D; lens.material = st.v > 0.5 ? M.lamp : M.enamel; bm.opacity = 0.075 * st.v; beam.visible = st.v > 0.01; });
+    let last = -1;
+    E.upd.push((dt) => { st.v = toward(st.v, st.o, dt * 3); if (st.v === last) return; last = st.v; knob.rotation.x = sm(st.v) * 90 * D; lens.material = st.v > 0.5 ? M.lamp : M.enamel; bm.opacity = 0.075 * st.v; beam.visible = st.v > 0.01; });
   }
   // ---- Morsetaste im Funkraum (detail_gondola.js: Hebel 204.95 → 205.06 auf R(0.76)+0.035…0.04, Drehpunkt x 204.98, Knopf x 205.06, z 2.44)
   {
@@ -323,7 +331,7 @@ export default function (C) {
     const st = { t: -1 };
     act(() => (st.t >= 0 ? 'Morsetaste: sende DEKAH …' : 'Morsetaste: Rufzeichen DEKAH geben'), V(205.06, y + 0.06, 2.44), () => { if (st.t >= 0) return; st.t = 0; for (const [t, d] of ivs) tone(760, t, d, { vol: 0.07, gate: true }); }, 1.3);
     const end = ivs[ivs.length - 1][0] + ivs[ivs.length - 1][1] + 0.1;
-    E.upd.push((dt) => { if (st.t < 0) return; st.t += dt; const dn = ivs.some(([t, d]) => st.t >= t && st.t < t + d); piv.rotation.z = dn ? -4.5 * D : 0; if (st.t > end) { st.t = -1; piv.rotation.z = 0; } });
+    E.upd.push((dt) => { if (st.t < 0) return; st.t += dt; let dn = false; for (let i = 0; i < ivs.length; i++) { if (st.t >= ivs[i][0] && st.t < ivs[i][0] + ivs[i][1]) { dn = true; break; } } piv.rotation.z = dn ? -4.5 * D : 0; if (st.t > end) { st.t = -1; piv.rotation.z = 0; } });
   }
 
   // ===================== KIELGANG =====================
@@ -341,8 +349,9 @@ export default function (C) {
     C.root.add(dark);
     const st = { o: 1, v: 1 };
     act(() => `Kielgangbeleuchtung ${st.o ? 'ausschalten' : 'einschalten'}`, V(xs, yE + 0.98, zf - 0.1), () => { st.o ^= 1; }, 1.5);
+    let last = -1;
     E.upd.push((dt) => {
-      const was = st.v > 0.5; st.v = toward(st.v, st.o, dt * 2.5); const k = sm(st.v);
+      const was = st.v > 0.5; st.v = toward(st.v, st.o, dt * 2.5); if (st.v === last) return; last = st.v; const k = sm(st.v);
       blade.rotation.x = -(4 + (1 - k) * 69.6) * D; dark.visible = st.v < 0.5;
       if (was !== st.v > 0.5) hiss(0, 0.12, { f: 3000, vol: 0.06, atk: 0.003 });
     });
@@ -367,8 +376,9 @@ export default function (C) {
     const nxt = (s) => { let n = s.d + 5 * s.dir; if (Math.abs(n) > 15) { s.dir = -s.dir; n = s.d + 5 * s.dir; } return n; };
     act(() => `Notseitenrad: Ruder ${rs(sS.d)} → ${rs(nxt(sS))}`, V(S.x1 - 0.5, wy + 0.2, 0.25), () => { sS.d = nxt(sS); }, 1.6);
     act(() => `Nothöhenrad: ${hs(sH.d)} → ${hs(nxt(sH))}`, V(39.4, wy + 0.2, -0.24), () => { sH.d = nxt(sH); }, 1.6);
+    const SRW = [[sS, wS, 'x'], [sH, wH, 'z']];
     E.upd.push((dt) => {
-      for (const [s, g, ax] of [[sS, wS, 'x'], [sH, wH, 'z']]) { s.a = toward(s.a, s.d / 5 * 90 * D, dt * 3); g.rotation[ax] = -s.a; }
+      for (const [s, g, ax] of SRW) { s.a = toward(s.a, s.d / 5 * 90 * D, dt * 3); g.rotation[ax] = -s.a; }
     });
   }
 
@@ -389,6 +399,6 @@ export function update(dt, C) {
   if (!E) return;
   dt = Math.min(Math.max(dt, 0), 0.1);
   const cam = C.camera && C.camera.position;
-  if (cam) for (const g of E.areas) g.visible = cam.distanceTo(g.userData.c) < g.userData.r;
+  if (cam) for (const g of E.areas) { const v = cam.distanceTo(g.userData.c) < g.userData.r; if (g.visible !== v) g.visible = v; }
   for (const f of E.upd) f(dt, C);
 }

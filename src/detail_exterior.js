@@ -3,10 +3,11 @@
 // (Führergondel außen, Fallreep-Klappen, Schriftzug, Kennzeichen und Olympiaringe gehören nicht hierher.)
 import * as THREE from 'three';
 import { V, QuadBuf } from './util.js';
+import { lean } from './decks.js';
 import { rLin, ST, MAIN, ENG, D2R, GX0, GX1, WIN_A, WIN_B, FALLREEP, FIN_OUT, finT, X_TAIL, X_BOW } from './hull.js';
 
 export default function (C) {
-  const { b, M } = C;
+  const { M } = C, b = lean(C.b);
 
   // ---------- lokale Materialien ----------
   const capMat = new THREE.MeshPhongMaterial({ color: 0x8e959c, specular: 0x777777, shininess: 45, side: THREE.DoubleSide });
@@ -28,16 +29,20 @@ export default function (C) {
   const mir = (s, fn) => { const o = MZ; MZ = s < 0; try { fn(); } finally { MZ = o; } };
 
   /** Quader mit orthonormalen Achsen (Mittelpunkt c, volle Kantenlängen). open: nur Oberseite (+ey) und Längsseiten (±ex). */
+  // Hilfsvektoren für obox (QuadBuf kopiert die Zahlen, die Vektoren selbst werden nicht behalten)
+  const OC = V(0, 0, 0), OA = [V(0, 0, 0), V(0, 0, 0), V(0, 0, 0)], OF = V(0, 0, 0), OX = V(0, 0, 0), OP = [V(0, 0, 0), V(0, 0, 0), V(0, 0, 0), V(0, 0, 0)];
+  const wInto = (o, p) => o.set(p.x, p.y, MZ ? -p.z : p.z);
   function obox(mat, c, ex, ey, ez, sx, sy, sz, open = false) {
-    c = W(c); ex = W(ex); ey = W(ey); ez = W(ez);
-    const ax = [ex.multiplyScalar(sx / 2), ey.multiplyScalar(sy / 2), ez.multiplyScalar(sz / 2)];
+    wInto(OC, c); wInto(OA[0], ex).multiplyScalar(sx / 2); wInto(OA[1], ey).multiplyScalar(sy / 2); wInto(OA[2], ez).multiplyScalar(sz / 2);
     Q(mat, (q) => {
-      for (let i = 0; i < 3; i++) for (const sg of [1, -1]) {
+      for (let i = 0; i < 3; i++) for (let s = 0; s < 2; s++) {
+        const sg = s ? -1 : 1;
         if (open && (i === 2 || (i === 1 && sg < 0) || (open === 2 && i === 0))) continue;
-        const A = ax[i], B = ax[(i + 1) % 3], D = ax[(i + 2) % 3];
-        const fc = c.clone().addScaledVector(A, sg);
-        const p1 = fc.clone().sub(B).sub(D), p2 = fc.clone().add(B).sub(D), p3 = fc.clone().add(B).add(D), p4 = fc.clone().sub(B).add(D);
-        if (new THREE.Vector3().crossVectors(B, D).dot(A) * sg >= 0) q.quad(p1, p2, p3, p4); else q.quad(p1, p4, p3, p2);
+        const A = OA[i], B = OA[(i + 1) % 3], D = OA[(i + 2) % 3];
+        OF.copy(OC).addScaledVector(A, sg);
+        const [p1, p2, p3, p4] = OP;
+        p1.copy(OF).sub(B).sub(D); p2.copy(OF).add(B).sub(D); p3.copy(OF).add(B).add(D); p4.copy(OF).sub(B).add(D);
+        if (OX.crossVectors(B, D).dot(A) * sg >= 0) q.quad(p1, p2, p3, p4); else q.quad(p1, p4, p3, p2);
       }
     });
   }
@@ -356,23 +361,52 @@ export default function (C) {
     g.computeBoundingSphere();
     return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
   })();
-  const RC = new THREE.Raycaster(), RO = V(0, 0, 5), RD = V(0, 0, -1);
+  // Abfrage wie ein Strahl von z = +5 nach −z (erste Fläche von außen = größtes z), aber über ein Raster der in xy
+  // projizierten Dreiecke und mit Zwischenspeicher: dieselben Punkte werden für alle vier Flossen und beide Seiten gefragt.
+  const FG = (() => {
+    const P = FT.geometry.attributes.position.array, CELL = 0.5, cells = new Map(), tris = [];
+    for (let o = 0; o < P.length; o += 9) {
+      const ax = P[o], ay = P[o + 1], bx = P[o + 3], by = P[o + 4], cx = P[o + 6], cy = P[o + 7];
+      const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+      if (Math.abs(d) < 1e-12) continue;                                       // senkrecht zur Strahlrichtung: kein Treffer
+      const t = tris.length; tris.push([ax, ay, P[o + 2], bx, by, P[o + 5], cx, cy, P[o + 8], d]);
+      const i0 = Math.floor(Math.min(ax, bx, cx) / CELL), i1 = Math.floor(Math.max(ax, bx, cx) / CELL);
+      const j0 = Math.floor(Math.min(ay, by, cy) / CELL), j1 = Math.floor(Math.max(ay, by, cy) / CELL);
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const k = i * 4096 + j; let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(t); }
+    }
+    return { CELL, cells, tris };
+  })();
+  const FZ = new Map();
   /** halbe Flossendicke an (x, r): erste Fläche von außen (+z-Seite) */
   function finZ(x, y) {
-    RO.set(x, y, 5); RC.set(RO, RD);
-    const h = RC.intersectObject(FT, false);
-    return h.length ? h[0].point.z : -1;
+    let row = FZ.get(x); if (!row) FZ.set(x, row = new Map());
+    let z = row.get(y); if (z !== undefined) return z;
+    z = -1; let hit = false;
+    const list = FG.cells.get(Math.floor(x / FG.CELL) * 4096 + Math.floor(y / FG.CELL));
+    if (list) for (const t of list) {
+      const [ax, ay, az, bx, by, bz, cx, cy, cz, d] = FG.tris[t];
+      const l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d, l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d, l3 = 1 - l1 - l2;
+      if (l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9) continue;
+      const zz = l1 * az + l2 * bz + l3 * cz;
+      if (zz <= 5 && (!hit || zz > z)) { z = zz; hit = true; }
+    }
+    row.set(y, z);
+    return z;
   }
   const finN = (x, y, zs) => { const h = 0.05, fx = (finZ(x + h, y) - finZ(x - h, y)) / (2 * h), fy = (finZ(x, y + h) - finZ(x, y - h)) / (2 * h); return V(-fx, -fy, 1).normalize().multiply(V(1, 1, zs)); };
   // Flosse k: lokale Ebene (x, radial y, quer z), um x um k·90° gedreht (wie hull.js)
   const fp = (k, x, y, z) => { const c = Math.round(Math.cos(k * Math.PI / 2)), s = Math.round(Math.sin(k * Math.PI / 2)); return V(x, y * c - z * s, y * s + z * c); };
   const fv = (k, v) => fp(k, v.x, v.y, v.z);
+  const FTOP = new Map();
   const finTop = (x) => {
+    let v = FTOP.get(x); if (v !== undefined) return v;
+    v = -1;
     for (let i = 0; i < FIN_OUT.length - 1; i++) {
       const [xa, ya] = FIN_OUT[i], [xc, yc] = FIN_OUT[i + 1];
-      if (x <= xa && x >= xc) return xa - xc < 1e-6 ? Math.max(ya, yc) : ya + (yc - ya) * (xa - x) / (xa - xc);
+      if (x <= xa && x >= xc) { v = xa - xc < 1e-6 ? Math.max(ya, yc) : ya + (yc - ya) * (xa - x) / (xa - xc); break; }
     }
-    return -1;
+    FTOP.set(x, v);
+    return v;
   };
   const XH = 20;                                                              // Ruderscharnier
   const xTE = (y) => FIN_OUT[12][0] + (Math.max(FIN_OUT[12][1], y) - FIN_OUT[12][1]) * (FIN_OUT[11][0] - FIN_OUT[12][0]) / (FIN_OUT[11][1] - FIN_OUT[12][1]);
@@ -405,6 +439,9 @@ export default function (C) {
     for (let s = s0; s <= s1 + 1e-9; s += ds) { const ok = f(s); if (ok && a === null) a = s; if ((!ok || s + ds > s1 + 1e-9) && a !== null) { const e = ok ? s : s - ds; if (e - a > 0.4) out.push([a, e]); a = null; } }
     return out;
   }
+  // inFin hängt nur bei der unteren Flosse (k = 2, Notsteuerstand) von k ab: Abschnitte einmal je Fall bestimmen
+  const SPANS = new Map();
+  const finSpans = (kind, v, k, f) => { const key = kind + v + (k === 2 ? 'u' : ''); let r = SPANS.get(key); if (!r) SPANS.set(key, r = f()); return r; };
   const lampMat = [M.navWhite, M.navGreen, M.navWhite, M.navRed];
   const RIB_Y = [9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.1];            // Rippen (achsparallel)
   const SPAR_X = [16.4, 18.3, 23.5, 27.5, 31.5, 35.5, 39.5, 43.5, 47.5];         // Holme / Querbänder (radial)
@@ -412,8 +449,8 @@ export default function (C) {
     const Af = 180 - 90 * k;                                                 // Hüllwinkel der Flossenebene
     for (const zs of [1, -1]) {
       // Rippen und Holme als Abdeckbänder
-      for (const y of RIB_Y) for (const [xa, xb] of spans(13.6, 52, 0.05, (x) => inFin(k, x, y, 0.22))) part(() => finStrip(M.hullSeam, k, zs, [xa, y], [xb, y], 0.12, 0.022, 0.016, 2));
-      for (const x of SPAR_X) for (const [ya, yb] of spans(rLin(x) + 0.35, 21.8, 0.05, (y) => inFin(k, x, y, 0.22))) part(() => finStrip(M.hullSeam, k, zs, [x, ya], [x, yb], 0.1, 0.03, 0.016, 2));
+      for (const y of RIB_Y) for (const [xa, xb] of finSpans('r', y, k, () => spans(13.6, 52, 0.05, (x) => inFin(k, x, y, 0.22)))) part(() => finStrip(M.hullSeam, k, zs, [xa, y], [xb, y], 0.12, 0.022, 0.016, 2));
+      for (const x of SPAR_X) for (const [ya, yb] of finSpans('s', x, k, () => spans(rLin(x) + 0.35, 21.8, 0.05, (y) => inFin(k, x, y, 0.22)))) part(() => finStrip(M.hullSeam, k, zs, [x, ya], [x, yb], 0.1, 0.03, 0.016, 2));
       // Ruderscharniere an der Scharnierlinie x = 20
       part(() => {
         for (const y of [9.4, 12.6, 15.8, 19.0, 21.0]) {

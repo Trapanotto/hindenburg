@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { V, rng } from './util.js';
 import { keelY, GX0, GX1, G_Y, G_YC, G_HW } from './hull.js';
-import { chair, table } from './decks.js';
+import { chair, table, lean } from './decks.js';
 
 const V3 = THREE.Vector3, UP = new THREE.Vector3(0, 1, 0), D = Math.PI / 180;
 const F0 = (h) => G_Y + h;
@@ -170,7 +170,7 @@ function drawTelegramm(g) {
 }
 
 export default function (C) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   const gy = G_Y, gc = G_YC, F = (h) => gy + h;
   const sign = C.sign, gauge = C.gauge, panel = C.panel;
   const mCellu = new THREE.MeshLambertMaterial({ color: 0xe6dcb0 });

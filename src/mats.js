@@ -82,5 +82,7 @@ export function makeMats() {
     cell: new THREE.MeshLambertMaterial({ color: 0xdccb9e, emissive: 0x3a3222, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }),
     wire: new THREE.LineBasicMaterial({ color: 0xa9b2ba, transparent: true, opacity: 0.45 }),
   };
+  // world.js ändert die Farbe der Lampen je Tageszeit: nicht mit anderen Materialien zusammenlegen (siehe util.js)
+  M.lamp.userData.noMerge = true;
   return M;
 }

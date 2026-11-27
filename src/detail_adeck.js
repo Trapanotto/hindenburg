@@ -4,11 +4,11 @@
 // Raumgrenzen kommen aus ROOMS; Lagen bestehender Möbel (Tische, Buffets, Bilder, Bänke, Flügel …) sind aus decks.js übernommen.
 import * as THREE from 'three';
 import { V, rng } from './util.js';
-import { ROOMS, table, lamp } from './decks.js';
+import { ROOMS, table, lamp, lean } from './decks.js';
 import { A_Y, A_H, B_Y, hw } from './hull.js';
 
 export default function (C) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   const AY = A_Y, AC = A_Y + A_H, PI = Math.PI;
   const R = Object.fromEntries(ROOMS.filter((r) => r.deck === 'A' && !r.cabin).map((r) => [r.name, r]));
   const SAAL = R['Speisesaal'], PAN = R['Anrichte'], LOUNGE = R['Gesellschaftsraum'], LESE = R['Schreib- und Lesezimmer'];

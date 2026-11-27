@@ -9,6 +9,7 @@
 // für die ZR-3, Ort nicht eindeutig, und 643 ft an anderen Navy-Basen), Lage der Gleise, Torform und Fensterteilung der Halle.
 import * as THREE from 'three';
 import { V, rng, canvasTex, QuadBuf } from './util.js';
+import { lean } from './decks.js';
 import { X_BOW, GROUND_Y, FALLREEP, rLin, hp, D2R } from './hull.js';
 
 const GY = GROUND_Y;
@@ -30,10 +31,10 @@ const ryTo = (dx, dz) => Math.atan2(-dz, dx);
 const circ = (th, r = RC) => V(XM - r * Math.cos(th), GY, r * Math.sin(th));
 const TITLES = new Set();
 
-let G = null, sock = null, sockArm = null, t = 0, lastMode = null;
+let G = null, sock = null, sockArm = null, t = 0, lastMode = null, lazyTex = null;
 
 export default function (C) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   const L = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
   const P = (c, o = {}) => new THREE.MeshPhongMaterial({ color: c, specular: 0x333333, shininess: 25, ...o });
   const corr = canvasTex(64, 64, (g, w, h) => {
@@ -53,7 +54,7 @@ export default function (C) {
 
   // ---------- Hilfen ----------
   const B = (mat, x0, x1, y0, y1, z0, z1) => b.bb(mat, Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1), Math.min(z0, z1), Math.max(z0, z1));
-  const rope = (pts, r = 0.022, mat = M.rope) => { for (let i = 0; i < pts.length - 1; i++) b.cyl(mat, pts[i], pts[i + 1], r, 5); };
+  const rope = (pts, r = 0.022, mat = M.rope) => { for (let i = 0; i < pts.length - 1; i++) b.tube(mat, pts[i], pts[i + 1], r, 5); }; // Stöße und Enden verdeckt
   const sag = (a, c, n, s) => { const out = []; for (let i = 0; i <= n; i++) { const f = i / n; out.push(a.clone().lerp(c, f).add(V(0, -4 * s * f * (1 - f), 0))); } return out; };
   const info = (title, text, x, y, z) => { TITLES.add(title); C.info(title, text, x, y, z); };
   const block = (x0, x1, z0, z1, h = 4, y0 = GY) => nav.block(x0, x1, z0, z1, y0, y0 + h);
@@ -566,7 +567,8 @@ export default function (C) {
   G = new THREE.Group(); G.name = 'mastScene'; G.visible = false; C.scene.add(G);
   const S = 1800, X0 = XM - 60 - S / 2, Z0 = -200 - S / 2, TX = 2048;
   const toPx = (x, z) => [(x - X0) / S * TX, (z - Z0) / S * TX], mpx = TX / S;
-  const macro = canvasTex(TX, TX, (g) => {
+  // Bodentexturen erst beim ersten Wechsel an den Ankermast zeichnen (spart ≈ 20 ms beim Start; die Szene ist bis dahin unsichtbar)
+  const makeMacro = () => canvasTex(TX, TX, (g) => {
     const r = rng(17), blob = (x, z, rad, col, al) => {
       const [px, pz] = toPx(x, z), R = rad * mpx, gr = g.createRadialGradient(px, pz, 0, px, pz, R);
       gr.addColorStop(0, `rgba(${col},${al})`); gr.addColorStop(1, `rgba(${col},0)`); g.fillStyle = gr; g.beginPath(); g.arc(px, pz, R, 0, 7); g.fill();
@@ -587,15 +589,21 @@ export default function (C) {
       const [ix, iz] = toPx(HX - 54.5, HZ1); g.fillStyle = '#56534d'; g.fillRect(ix, iz, 109 * mpx, (HZ0 - HZ1) * mpx); }
     g.strokeStyle = '#6f7a46'; g.lineWidth = 16; g.strokeRect(0, 0, TX, TX);
   }, { repeat: false });
-  macro.anisotropy = 8;
-  const detail = canvasTex(256, 256, (g, w, h) => {
+  const makeDetail = () => canvasTex(256, 256, (g, w, h) => {
     const r = rng(23); g.fillStyle = 'rgb(134,134,134)'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 5000; i++) { const v = 70 + r() * 140 | 0; g.fillStyle = `rgba(${v},${v},${v},0.55)`; g.fillRect(r() * w, r() * h, 1, 2 + r() * 4); }
     for (let i = 0; i < 40; i++) { const v = 150 + r() * 60 | 0; g.fillStyle = `rgba(${v},${v},${v},0.35)`; g.beginPath(); g.arc(r() * w, r() * h, 4 + r() * 14, 0, 7); g.fill(); }
   });
-  detail.colorSpace = THREE.NoColorSpace;
-  const gmat = new THREE.MeshLambertMaterial({ map: macro });
+  let detail = null;
+  const gmat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  lazyTex = () => {
+    lazyTex = null;
+    const macro = makeMacro(); macro.anisotropy = 8;
+    detail = makeDetail(); detail.colorSpace = THREE.NoColorSpace;
+    gmat.map = macro; gmat.needsUpdate = true;
+  };
   gmat.onBeforeCompile = (sh) => {
+    if (lazyTex) lazyTex();
     sh.uniforms.uDet = { value: detail }; sh.uniforms.uHaze = { value: new THREE.Color(0x9aa38e) };
     sh.vertexShader = 'varying vec3 vGW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = 'uniform sampler2D uDet;\nuniform vec3 uHaze;\nvarying vec3 vGW;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
@@ -639,6 +647,7 @@ export default function (C) {
 
 function apply(mode) {
   lastMode = mode; const on = mode === 'mast';
+  if (on && lazyTex) lazyTex();
   if (G) G.visible = on;
   const hb = typeof window !== 'undefined' ? window.__hb : null;
   if (hb && hb.infos) for (const i of hb.infos) if (TITLES.has(i.title) && i.sprite) i.sprite.visible = on;

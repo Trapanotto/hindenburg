@@ -31,8 +31,10 @@ export function buildWorld(scene, mobile) {
   // Umgebung (Meer, Wolken) als Gruppe um die Schiffsmitte: lässt sich für die Längsneigung kippen
   const env = new THREE.Group(); env.position.set(122, 0, 0); scene.add(env);
 
+  // depthWrite aus: das Meer liegt ohnehin hinter allem; so bleibt seine Fläche in der Tiefe „leer“ und bekommt
+  // (wie bisher) keine Umgebungsverschattung, seit GTAO die Tiefe des normalen Durchgangs mitbenutzt
   const ocean = new THREE.Mesh(new THREE.PlaneGeometry(30000, 30000), new THREE.ShaderMaterial({
-    uniforms: U, fog: false,
+    uniforms: U, fog: false, depthWrite: false,
     vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
     fragmentShader: `precision highp float; varying vec3 vW; uniform vec3 sea,sea2,hor,sunDir,sunCol; uniform float time,night,drift;
       float h21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
@@ -61,14 +63,44 @@ export function buildWorld(scene, mobile) {
       g.fillStyle = gr; g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill();
     }
   }, { repeat: false });
-  const cloudMat = new THREE.SpriteMaterial({ map: puff, transparent: true, depthWrite: false, fog: false });
+  // Alle Wolken in EINEM Mesh (ein Zeichenaufruf statt einem je Sprite): je Wolke ein zur Kamera gedrehtes Rechteck,
+  // jedes Bild von hinten nach vorn sortiert wie zuvor die einzelnen Sprites. Aussehen wie SpriteMaterial (Farbe × Textur).
+  const cloudMat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: puff }, color: { value: new THREE.Color(0xffffff) } }, transparent: true, depthWrite: false, fog: false,
+    vertexShader: 'attribute vec3 ctr; attribute vec2 ofs; varying vec2 vUv; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(ctr, 1.0); mv.xy += ofs; gl_Position = projectionMatrix * mv; }',
+    fragmentShader: `uniform sampler2D map; uniform vec3 color; varying vec2 vUv;
+      void main(){ vec4 t = texture2D(map, vUv); gl_FragColor = vec4(color * t.rgb, t.a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
   const clouds = [], r = rng(77), N = mobile ? 60 : 150, SPAN = 6000;
   for (let i = 0; i < N; i++) {
-    const s = new THREE.Sprite(cloudMat), high = r() < 0.2, sc = high ? 400 + r() * 700 : 180 + r() * 330;
+    const high = r() < 0.2, sc = high ? 400 + r() * 700 : 180 + r() * 330;
     let z = (r() - 0.5) * SPAN; if (!high && Math.abs(z) < 160) z += Math.sign(z || 1) * 220;
-    s.position.set((r() - 0.5) * SPAN, high ? 500 + r() * 900 : -215 + r() * 100, z);
-    s.scale.set(sc, sc * (high ? 0.28 : 0.32), 1); s.renderOrder = -5;
-    s.userData.y0 = s.position.y; env.add(s); clouds.push(s);
+    const c = { position: new THREE.Vector3((r() - 0.5) * SPAN, high ? 500 + r() * 900 : -215 + r() * 100, z), scale: new THREE.Vector2(sc, sc * (high ? 0.28 : 0.32)), visible: true, userData: {}, d: 0 };
+    c.userData.y0 = c.position.y; clouds.push(c);
+  }
+  const cg = new THREE.BufferGeometry(), cCtr = new Float32Array(N * 12), cOfs = new Float32Array(N * 8), cUv = new Float32Array(N * 8), cIdx = [];
+  for (let i = 0; i < N; i++) { cUv.set([0, 0, 1, 0, 1, 1, 0, 1], i * 8); const v = i * 4; cIdx.push(v, v + 1, v + 2, v, v + 2, v + 3); }
+  cg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 12), 3)); // nur für three.js; gezeichnet wird über ctr/ofs
+  cg.setAttribute('ctr', new THREE.BufferAttribute(cCtr, 3).setUsage(THREE.DynamicDrawUsage));
+  cg.setAttribute('ofs', new THREE.BufferAttribute(cOfs, 2).setUsage(THREE.DynamicDrawUsage));
+  cg.setAttribute('uv', new THREE.BufferAttribute(cUv, 2)); cg.setIndex(cIdx);
+  const cloudMesh = new THREE.Mesh(cg, cloudMat); cloudMesh.frustumCulled = false; cloudMesh.renderOrder = -5; env.add(cloudMesh);
+  const order = [], _cp = new THREE.Vector3();
+  function writeClouds(cam) {
+    // Kameraposition im System der Umgebungsgruppe; Abstand fürs Sortieren (hinten zuerst)
+    env.updateMatrixWorld(); _cp.copy(cam.position); env.worldToLocal(_cp);
+    order.length = 0; for (const c of clouds) if (c.visible) { c.d = c.position.distanceToSquared(_cp); order.push(c); }
+    order.sort((a, b) => b.d - a.d);
+    for (let i = 0; i < order.length; i++) {
+      const c = order[i], p = c.position, w = c.scale.x / 2, h = c.scale.y / 2;
+      for (let k = 0; k < 4; k++) { cCtr[i * 12 + k * 3] = p.x; cCtr[i * 12 + k * 3 + 1] = p.y; cCtr[i * 12 + k * 3 + 2] = p.z; }
+      cOfs.set([-w, -h, w, -h, w, h, -w, h], i * 8);
+    }
+    cg.attributes.ctr.needsUpdate = true; cg.attributes.ofs.needsUpdate = true; cg.setDrawRange(0, order.length * 6);
+    cloudMesh.visible = order.length > 0;
   }
 
   // Spiegelungsumgebung aus dem Himmel (für Metall, Glas, polierte Böden); je Tageszeit neu erzeugt
@@ -89,7 +121,7 @@ export function buildWorld(scene, mobile) {
   const fill = new THREE.DirectionalLight(0xdfe8ff, 0.5); scene.add(fill);
 
   const api = {
-    idx: 1, sun,
+    idx: 1, sun, clouds,
     set(i, M, renderer) {
       api.idx = i; const t = TIMES[i];
       U.top.value.set(t.top); U.hor.value.set(t.hor); api._base = new THREE.Vector3(...t.sun).normalize(); U.sunDir.value.copy(api._base); U.sunCol.value.set(t.sunCol);
@@ -97,7 +129,7 @@ export function buildWorld(scene, mobile) {
       sun.color.set(t.sunCol); sun.intensity = t.sunI; 
       fill.intensity = i === 3 ? 0.2 : t.fill;
       hemi.intensity = t.hemi; hemi.color.set(t.hemiSky);
-      cloudMat.color.set(t.cloud);
+      cloudMat.uniforms.color.value.set(t.cloud);
       M.hullIn.emissive.set(0x574a34).multiplyScalar(t.glow / 0.7);
       M.cell.emissive.set(0x3a3222).multiplyScalar(t.glow / 0.7);
       M.lamp.color.set(i === 3 || i === 2 ? 0xfff1cc : 0xf2ead8);
@@ -116,6 +148,7 @@ export function buildWorld(scene, mobile) {
         c.position.x -= sim.speed * dt; if (c.position.x < lx - SPAN / 2) c.position.x += SPAN;
         c.position.y = c.userData.y0 + (300 - sim.alt); c.visible = fly ? c.position.y < -40 || c.position.y > 200 : c.userData.y0 > 200;
       }
+      writeClouds(cam);
       // Kursänderung dreht den Sonnenstand; das Schattenbild wird dabei nur gelegentlich erneuert
       api._t = (api._t || 0) + dt;
       if (api._r && Math.abs(sim.heading - api._h) > 0.035 && api._t > 0.5) { api._t = 0; api.applySun(sim.heading, api._r); }

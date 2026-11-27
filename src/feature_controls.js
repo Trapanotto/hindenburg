@@ -44,7 +44,7 @@ export function newState(sim = {}) {
     Vg: V0, valveT: 0, handrad: false, blown: 0, auto: 0, fuel: 0, t: 0,
   };
 }
-export const ballast = (S) => S.tanks.reduce((a, b) => a + b, 0) + S.sacks.filter(Boolean).length * SACK;
+export const ballast = (S) => { let w = 0, n = 0; for (const m of S.tanks) w += m; for (const s of S.sacks) if (s) n++; return w + n * SACK; };
 export const pressureHeight = (S) => H_SCALE * Math.log(V_FULL / S.Vg);
 
 /** Ein Zeitschritt dt (s). Gleichungen:
@@ -77,7 +77,7 @@ export function step(S, dt) {
   S.pitch += (pt - S.pitch) * Math.min(1, dt / 6);
   // Wasserballast: 100 kg/s aus dem jeweils nächsten Tank
   if (S.flow > 0) {
-    let k = S.tanks.findIndex((m) => m > 0);
+    let k = -1; for (let j = 0; j < S.tanks.length; j++) if (S.tanks[j] > 0) { k = j; break; }
     if (k < 0) S.flow = 0;
     else { const m = Math.min(S.flow, 100 * dt, S.tanks[k]); S.tanks[k] -= m; S.flow -= m; }
   }
@@ -269,6 +269,10 @@ export default function (C) {
   }
 }
 
+// Zeiger drehen; geschrieben wird nur bei geänderter Lage
+const set = (k, deg) => { const o = R.needles[k]; if (o) { const r = -deg * D; if (o.rotation.z !== r) o.rotation.z = r; } };
+const HR_K = ['hrBb', 'hrG', 'hrStb'], SR_K = ['srO', 'srU'], RPM_K = ['rpm0', 'rpm1', 'rpm2', 'rpm3'];
+
 function inGondola(cam) {
   const p = cam && cam.position; if (!p) return false;
   return p.x > GX0 - 0.1 && p.x < GX1 + 0.3 && p.y > G_Y - 0.2 && p.y < G_YC + 0.3 && Math.abs(p.z) < G_HW + 0.1;
@@ -276,8 +280,8 @@ function inGondola(cam) {
 
 function updateHud(C) {
   if (!hud) return;
-  const on = inGondola(C.camera);
-  hud.style.display = on ? 'block' : 'none';
+  const on = inGondola(C.camera), dsp = on ? 'block' : 'none';
+  if (hud.style.display !== dsp) hud.style.display = dsp;
   if (!on) return;
   const mast = C.sim.mode === 'mast', v = hud._v;
   const tel = S.tele.every((t) => t === S.tele[0]) ? `${ST[S.tele[0]].n} (alle 4)` : S.tele.map((t) => ST[t].s).join(' · ');
@@ -288,7 +292,11 @@ function updateHud(C) {
     `${fmt(S.tanks.reduce((a, c) => a + c, 0) / 1000)} t Wasser · Not ${S.sacks.filter(Boolean).length}/8`,
     `${fmt(S.Vg / V_FULL * 100, 1)} %${S.valveT > 0 || S.handrad ? ' · Ventile offen' : ''}`,
   ];
-  vals.forEach((t, i) => { if (v[i] && v[i].textContent !== t) v[i].textContent = t; v[i] && (v[i].parentNode.style.display = t ? '' : 'none'); });
+  vals.forEach((t, i) => {
+    if (!v[i]) return;
+    if (v[i].textContent !== t) v[i].textContent = t;
+    const pd = t ? '' : 'none', ps = v[i].parentNode; if (ps.style.display !== pd) ps.style.display = pd;
+  });
 }
 
 export function update(dt, C) {
@@ -306,22 +314,21 @@ export function update(dt, C) {
   // Anzeigen nur nachführen, wenn jemand in der Nähe ist
   const cam = C.camera && C.camera.position;
   const near = !cam || (cam.x > GX0 - 25 && cam.x < GX1 + 25 && Math.abs(cam.y - G_Y) < 25 && Math.abs(cam.z) < 25);
-  R.live.visible = near;
+  if (R.live.visible !== near) R.live.visible = near;
   if (near) animate(dt, mast);
   hudT -= dt; if (hudT <= 0) { hudT = 0.25; updateHud(C); }
 }
 
 function animate(dt, mast) {
-  const n = R.needles, kmh = mast ? 0 : Math.max(0, S.v * 3.6), vz = S.vzDisp;
-  const set = (k, deg) => { if (n[k]) n[k].rotation.z = -deg * D; };
+  const kmh = mast ? 0 : Math.max(0, S.v * 3.6), vz = S.vzDisp;
   set('hoehe', -150 + clamp(S.alt / 1200, 0, 1) * 300); set('hoehe2', -150 + clamp(S.alt / 1200, 0, 1) * 300);
   set('vario', -90 + clamp(vz / 5, -1, 1) * 165); set('vario2', -90 + clamp(vz / 5, -1, 1) * 165);
   set('stato', clamp(vz, -1, 1) * 70);
   set('neig20', 180 + clamp(S.pitch, -20, 20) * 3); set('neig5', 180 + clamp(S.pitch, -5, 5) * 15);
-  for (const k of ['hrBb', 'hrG', 'hrStb']) set(k, clamp(S.elev, -20, 20) * 5);
-  for (const k of ['srO', 'srU']) set(k, clamp(S.rud, -20, 20) * 5);
+  for (const k of HR_K) set(k, clamp(S.elev, -20, 20) * 5);
+  for (const k of SR_K) set(k, clamp(S.rud, -20, 20) * 5);
   set('fahrt', -135 + clamp(kmh / 150, 0, 1) * 270);
-  for (let i = 0; i < 4; i++) set('rpm' + i, -135 + clamp(Math.abs(S.rpm[i]) / 1650, 0, 1) * 270);
+  for (let i = 0; i < 4; i++) set(RPM_K[i], -135 + clamp(Math.abs(S.rpm[i]) / 1650, 0, 1) * 270);
   // Räder: 5° Ruder = 90° Raddrehung (Annahme), Steuerbord bzw. „hoch“ = im Uhrzeigersinn
   R.wheels.s.rotation.z = -(S.rud / STEP) * 90 * D;
   R.wheels.h.rotation.z = -(S.elev / STEP) * 90 * D;
@@ -330,10 +337,10 @@ function animate(dt, mast) {
   for (let i = 0; i < 4; i++) { S.teleAng[i] = toward(S.teleAng[i], mast ? ST[I_STOP].ang : ST[S.tele[i]].ang, 400 * dt); R.tele[i].rotation.z = -S.teleAng[i] * D; }
   const BL = LAYOUT.ballast;
   for (let i = 0; i < 7; i++) R.tanks[i].position.y = BL.tankY0 + (BL.tankY1 - BL.tankY0) * clamp(S.tanks[i] / TANK, 0, 1);
-  for (let j = 0; j < 8; j++) R.sacks[j].material = S.sacks[j] ? R.mat.mLampGreen : R.mat.mLampRed;
+  for (let j = 0; j < 8; j++) { const m = S.sacks[j] ? R.mat.mLampGreen : R.mat.mLampRed; if (R.sacks[j].material !== m) R.sacks[j].material = m; }
   R.trim.position.x = (BL.trimX0 + BL.trimX1) / 2 - clamp(S.trim / 2000, -1, 1) * (BL.trimX1 - BL.trimX0) / 2;
   const hp = pressureHeight(S);
-  for (let i = 0; i < 16; i++) R.cells[i].material = S.alt >= hp + CELL_OFF[i] ? R.mat.mLampRed : R.mat.mLampOff;
+  for (let i = 0; i < 16; i++) { const m = S.alt >= hp + CELL_OFF[i] ? R.mat.mLampRed : R.mat.mLampOff; if (R.cells[i].material !== m) R.cells[i].material = m; }
 }
 
 export function onMode(mode, C) {

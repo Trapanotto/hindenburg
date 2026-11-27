@@ -48,6 +48,10 @@ try {
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
+{ // Das Schattenbild prüft die Ebenen der Hauptkamera: währenddessen auch Ebene 1 zulassen (per LOD ausgeblendete Teile werfen weiter Schatten)
+  const sr = renderer.shadowMap.render;
+  renderer.shadowMap.render = function (lights, sc, cam) { const m = cam.layers.mask; cam.layers.mask = m | 2; try { sr.call(this, lights, sc, cam); } finally { cam.layers.mask = m; } };
+}
 let composer = null, aoPass = null;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(72, 1, 0.08, 16000);
@@ -66,11 +70,13 @@ const eff = (s) => `${Math.min(DPR(), s.pr)}|${s.lod}|${s.ao}|${s.sh}`;
 let qual = 3; // Standard: Auto
 const auto = { lvl: touch ? 2 : 0, ceil: touch ? 2 : 0, win: { n: 0, iv: 0, load: 0, t: 0 }, bad: 0, good: 0, cool: 2, upAt: -1e9, block: {}, back: {}, log: [] };
 let Q = LADDER[auto.lvl];
+let markerMat = null; // Material der Infopunkt-Marker (Größe hängt vom Bildwinkel ab)
 function resize() {
   renderer.setPixelRatio(Math.min(DPR(), Q.pr));
   renderer.setSize(innerWidth, innerHeight, false);
   if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(innerWidth, innerHeight); }
   camera.aspect = innerWidth / Math.max(1, innerHeight); camera.fov = innerWidth < innerHeight ? 82 : 72; camera.updateProjectionMatrix();
+  if (markerMat) markerMat.size = markerSize();
 }
 // Unterkante der Knopfleiste als CSS-Variable: Standortanzeige und Infotafel rücken darunter, egal wie oft die Leiste umbricht
 const barB = () => { const r = $('bar').getBoundingClientRect(); document.documentElement.style.setProperty('--barB', Math.round(r.bottom) + 'px'); };
@@ -105,23 +111,72 @@ const signs = makeSigns(); C.sign = signs.sign; C.gauge = signs.gauge; C.panel =
 const detailMods = { ...import.meta.glob('./detail_*.js'), ...import.meta.glob('./feature_*.js') };
 const MOD_LABEL = { adeck: 'A-Deck', bdeck: 'B-Deck', exterior: 'Außenhaut', gondola: 'Führergondel', keel: 'Kielgang und Laufwege', controls: 'Steuerstand', mast: 'Ankermast und Landefeld', sound: 'Motorenklang' };
 const modules = [];
-let hull = null, props = [], world = null, iMat = null, lodList = [];
+let hull = null, props = [], world = null, iMat = null, lodList = [], innerList = [], dynLod = [], markers = null;
 const roomLights = [];
 const player = new Player(camera, nav, canvas, $('joy')); C.player = player;
 
 // Entfernungsstaffelung: Kleinteile bis LOD[2] m, mittlere Teile bis LOD[1] m sichtbar (Faktor Q.lod je Qualitätsstufe)
 const LODD = touch ? [0, 70, 22] : [0, 110, 38], lodD = [0, 0, 0], lodAt = new THREE.Vector3(1e9, 0, 0);
 let lodFreeze = 0, lodAll = false, lodDirty = true;
+// Teile tief im Schiffsinneren (Builder: userData.inner) sind von außen nie zu sehen: die Hülle ist undurchsichtig, und
+// Fenster, Gondel, Fallreeps und Maschinenluken liegen in ausgesparten Bereichen (innerPart).
+const COS5 = Math.cos(Math.PI / 36), OPEN_X = [[170.5, 191], [195, 211], [36, 48], ...ENG.map((e) => [e.x - 4, e.x + 4])];
+const innerPart = (x0, x1, y0, y1, z0, z1) => {
+  if (x0 < 3 || x1 > 244 || OPEN_X.some(([a, c]) => x1 > a && x0 < c)) return false;
+  const r = Math.min(rLin(x0), rLin(x1)) * COS5 - 0.3;
+  return Math.hypot(Math.max(-y0, y1), Math.max(-z0, z1)) < r;
+};
+b.inner = innerPart;
+/** Kamera sicher außerhalb der Hülle (Außenflug, Boden der Mastszene) – nicht in der Nähe von Öffnungen, durch die man hineinsieht */
+function camOutside(p) {
+  if (p.x > 196 && p.x < 210 && p.y < -14 && Math.abs(p.z) < 4) return false; // in/an der Führergondel: Luke nach oben
+  if (sim.mode === 'mast' && Math.abs(p.x - 174) < 30) return false; // offene Fallreeps
+  for (const e of ENG) if (p.distanceTo(e.c) < 14) return false; // Maschinengondel mit Laufsteg und Luke
+  if (p.x < 2 || p.x > 246.7) return true;
+  return Math.hypot(p.y, p.z) > rLin(p.x) + 0.6;
+}
+const _lv = new THREE.Vector3();
 function updateLod() {
   const p = camera.position, all = lodFreeze > 0; if (all) lodFreeze--;
   // nur neu prüfen, wenn sich die Kamera merklich bewegt hat oder sich etwas geändert hat
   if (!all && !lodAll && !lodDirty && lodAt.distanceToSquared(p) < 0.25) return;
   lodAll = all; lodDirty = false; lodAt.copy(p);
   lodD[1] = LODD[1] * Q.lod; lodD[2] = LODD[2] * Q.lod;
+  const out = !all && camOutside(p);
+  // Ausblenden über die Ebenen statt über visible: Ebene 0 = Kamerabild, Ebene 1 = Schattenbild. Ausgeblendete Teile
+  // behalten Ebene 1 und werfen weiter Schatten – das Schattenbild braucht so kein Bild mit allen Teilen mehr, und die
+  // Module können visible ihrer eigenen Meshes weiter selbst schalten.
   for (const m of lodList) {
     const u = m.userData, c = u.lodC, d = lodD[u.lodK] + u.lodR;
-    m.visible = all || (c.x - p.x) ** 2 + (c.y - p.y) ** 2 + (c.z - p.z) ** 2 < d * d;
+    m.layers.mask = all || (!(out && u.inner) && (c.x - p.x) ** 2 + (c.y - p.y) ** 2 + (c.z - p.z) ** 2 < d * d) ? 3 : 2;
   }
+  for (const m of innerList) m.layers.mask = out ? 2 : 3;
+  // bewegliche Kleinteile der Module
+  for (const m of dynLod) {
+    const u = m.userData; _lv.copy(u.dynC).applyMatrix4(m.matrixWorld); const d = lodD[u.dynK] + u.dynR;
+    m.layers.mask = all || _lv.distanceToSquared(p) < d * d ? 3 : 2;
+  }
+}
+/** nach dem Aufbau: Entfernungsstaffelung auch für die eigenen (beweglichen) Meshes der Module */
+function collectDynLod() {
+  dynLod = []; const s = new THREE.Vector3();
+  ship.traverse((o) => {
+    if (!o.isMesh || o.userData.built || o.isInstancedMesh || o.isSkinnedMesh || !o.geometry || o.material.transparent) return;
+    const g = o.geometry; if (!g.attributes.position) return;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    o.updateWorldMatrix(true, false); o.matrixWorld.decompose(_lv, new THREE.Quaternion(), s);
+    const r = g.boundingSphere.radius * Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)), k = 2 * r < 0.4 ? 2 : 2 * r < 2.2 ? 1 : 0;
+    if (!k) return;
+    o.userData.dynC = g.boundingSphere.center.clone(); o.userData.dynR = r; o.userData.dynK = k; dynLod.push(o);
+  });
+}
+/** Punktgröße, die einem 0,2 m großen Sprite entspricht (PointsMaterial: Pixel = size · Höhe/2 / Tiefe) */
+function markerSize() { return 0.2 / Math.tan(camera.fov * Math.PI / 360); }
+function updMarkers() {
+  markers.userData.dirty = false;
+  const a = []; for (const i of infos) if (i.sprite.visible) a.push(i.pos.x, i.pos.y, i.pos.z);
+  markers.geometry.dispose(); markers.geometry = new THREE.BufferGeometry();
+  markers.geometry.setAttribute('position', new THREE.Float32BufferAttribute(a, 3));
 }
 function setTime(i) {
   world.set(i, M, renderer);
@@ -137,10 +192,48 @@ function ensurePost() {
     import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
     import('three/addons/postprocessing/GTAOPass.js'), import('three/addons/postprocessing/OutputPass.js'),
   ]).then(([{ EffectComposer }, { RenderPass }, { GTAOPass }, { OutputPass }]) => {
-    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
+    // Das Zwischenbild trägt eine Tiefentextur: GTAO liest die Tiefe des normalen Durchgangs und rekonstruiert daraus die
+    // Normalen, statt die ganze Szene ein zweites Mal (mit Normalenmaterial) zu zeichnen – halbiert die Zeichenaufrufe
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(innerWidth, innerHeight) });
     const cp = new EffectComposer(renderer, rt);
     cp.addPass(new RenderPass(scene, camera));
     const ao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    {
+      // Normalen einmal je Bildpunkt aus der Tiefe in ein eigenes Bild schreiben (ein Vollbilddurchgang); GTAO und Entrauschen
+      // lesen sie von dort, statt sie für jede Stichprobe neu aus der Tiefe zu rekonstruieren
+      const nrt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+      const nMat = new THREE.ShaderMaterial({
+        uniforms: { tDepth: { value: null }, cameraProjectionMatrixInverse: { value: new THREE.Matrix4() } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: `uniform sampler2D tDepth; uniform mat4 cameraProjectionMatrixInverse; varying vec2 vUv;
+          #include <packing>
+          vec3 vp(vec2 uv, float d){ vec4 c = vec4(vec3(uv, d) * 2.0 - 1.0, 1.0); vec4 v = cameraProjectionMatrixInverse * c; return v.xyz / v.w; }
+          float fd(ivec2 p){ return texelFetch(tDepth, p, 0).x; }
+          void main(){
+            vec2 size = vec2(textureSize(tDepth, 0)); ivec2 p = ivec2(vUv * size); float c0 = fd(p);
+            if (c0 >= 1.0) { gl_FragColor = vec4(0.5, 0.5, 1.0, 1.0); return; }
+            float l2 = fd(p - ivec2(2, 0)), l1 = fd(p - ivec2(1, 0)), r1 = fd(p + ivec2(1, 0)), r2 = fd(p + ivec2(2, 0));
+            float b2 = fd(p - ivec2(0, 2)), b1 = fd(p - ivec2(0, 1)), t1 = fd(p + ivec2(0, 1)), t2 = fd(p + ivec2(0, 2));
+            float dl = abs((2.0 * l1 - l2) - c0), dr = abs((2.0 * r1 - r2) - c0), db = abs((2.0 * b1 - b2) - c0), dt = abs((2.0 * t1 - t2) - c0);
+            vec3 ce = vp(vUv, c0);
+            vec3 dpdx = (dl < dr) ? ce - vp(vUv - vec2(1.0 / size.x, 0.0), l1) : -ce + vp(vUv + vec2(1.0 / size.x, 0.0), r1);
+            vec3 dpdy = (db < dt) ? ce - vp(vUv - vec2(0.0, 1.0 / size.y), b1) : -ce + vp(vUv + vec2(0.0, 1.0 / size.y), t1);
+            gl_FragColor = vec4(packNormalToRGB(normalize(cross(dpdx, dpdy))), 1.0);
+          }`,
+        depthTest: false, depthWrite: false,
+      });
+      ao.setGBuffer(rt.depthTexture, nrt.texture);
+      ao.gtaoMaterial.defines.DEPTH_SWIZZLING = 'x'; ao.pdMaterial.defines.DEPTH_SWIZZLING = 'x';
+      const r0 = ao.render.bind(ao), s0 = ao.setSize.bind(ao);
+      ao.setSize = (w, h) => { s0(w, h); nrt.setSize(w, h); };
+      ao.render = (r, wb, rb, ...rest) => { // nach jedem Pufferwechsel die Tiefe des gerade gezeichneten Bildes verwenden
+        const d = rb.depthTexture;
+        if (d && ao.depthTexture !== d) { ao.depthTexture = d; ao.gtaoMaterial.uniforms.tDepth.value = d; ao.pdMaterial.uniforms.tDepth.value = d; }
+        nMat.uniforms.tDepth.value = d; nMat.uniforms.cameraProjectionMatrixInverse.value.copy(camera.projectionMatrixInverse);
+        ao.renderPass(r, nMat, nrt);
+        return r0(r, wb, rb, ...rest);
+      };
+    }
     ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.3, thickness: 1.2, scale: 1.3, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
     ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 12 });
     // Durchscheinendes, Himmel, Meer und Wolken zählen nicht zur Verschattung (Liste zwischengespeichert statt jedes Bild die Szene zu durchlaufen)
@@ -165,7 +258,7 @@ function applyQ(s) {
   if (s.ao) ensurePost();
   if (prev.pr !== s.pr) resize();
   if (prev.lod !== s.lod) lodDirty = true;
-  if (world && world.sun.castShadow !== s.sh) { world.sun.castShadow = s.sh; renderer.shadowMap.needsUpdate = true; lodFreeze = 1; }
+  if (world && world.sun.castShadow !== s.sh) { world.sun.castShadow = s.sh; renderer.shadowMap.needsUpdate = true; }
 }
 
 // ---------- Bildzeitmessung ----------
@@ -249,7 +342,7 @@ canvas.addEventListener('webglcontextrestored', () => {
   if (freedCPU) { notice('Grafik zurückgesetzt', 'Zum Fortsetzen wird die Seite neu geladen …', { reload: true }); setTimeout(() => location.reload(), 1200); return; }
   hideNotice();
   if (world) setTime(world.idx); // Spiegelungsumgebung neu erzeugen
-  renderer.shadowMap.needsUpdate = true; lodFreeze = 1;
+  renderer.shadowMap.needsUpdate = true; lodDirty = true;
 }, false);
 
 // ---------- Oberfläche ----------
@@ -275,13 +368,13 @@ function setYear(y) {
   sim.year = y; nav.year = y; yearGroups[1936].visible = y === 1936; yearGroups[1937].visible = y === 1937;
   ship.traverse((o) => { if (o.userData.year) o.visible = o.userData.year === y; });
   $('bYear').textContent = String(y); for (const m of modules) if (m.onYear) m.onYear(y, C);
-  renderer.shadowMap.needsUpdate = true; lodFreeze = 1; refreshLive();
+  renderer.shadowMap.needsUpdate = true; lodDirty = true; refreshLive();
   const r = nav.ok(player.pos.x, player.pos.z, player.pos.y, 0.25, true); if (!r && !player.fly) go(...START);
 }
 function setMode(m) {
   sim.mode = m; nav.mode = m; modeGroups.flug.visible = m === 'flug'; modeGroups.mast.visible = m === 'mast';
   if (m === 'mast') { sim.speed = 0; sim.pitch = 0; } else if (sim.speed === 0) sim.speed = 34;
-  renderer.shadowMap.needsUpdate = true; lodFreeze = 1; refreshLive();
+  renderer.shadowMap.needsUpdate = true; lodDirty = true; refreshLive();
   if (!player.fly && !nav.ok(player.pos.x, player.pos.z, player.pos.y, 0.25, true)) player.teleport(...START);
   $('bMast').classList.toggle('on', m === 'mast'); $('bMast').textContent = m === 'mast' ? 'Am Ankermast' : 'Ankermast'; barB();
   for (const md of modules) if (md.onMode) md.onMode(m, C);
@@ -421,6 +514,7 @@ function frame() {
   for (const p of props) p.rotation.x += dt * 13 * (sim.mode === 'mast' ? 0 : Math.max(0.15, Math.abs(sim.speed) / 34));
   const t3 = performance.now();
   iMat.opacity = 0.75 + 0.25 * Math.sin(acc * 3);
+  if (markers.userData.dirty) updMarkers();
   // Auswahl (Infopunkt/Leiter/Bedienelement) etwa zwölfmal je Sekunde statt jedes Bild
   if ((candT -= dt) <= 0) {
     candT = 0.08; ui.cand = findCandidate();
@@ -435,6 +529,7 @@ function frame() {
   updateLod();
   const t5 = performance.now();
   if (!lost) {
+    if (warmQ.length) warmStep();
     gpuPoll(); gpuBegin();
     if (composer && Q.ao) composer.render(); else renderer.render(scene, camera);
     gpuEnd();
@@ -485,10 +580,11 @@ async function boot() {
       });
       props = buildProps(ship, M);
       lodList = ship.userData.lod || [];
+      innerList = []; ship.traverse((o) => { if (o.userData.inner && !o.userData.lodK) innerList.push(o); });
+      collectDynLod();
     }],
     ['world', 'Himmel, Meer und Licht', () => {
       world = buildWorld(scene, touch);
-      world.onShadow = () => { lodFreeze = 1; }; // für ein neues Schattenbild kurz alles einblenden
       // Raumlichter für Abend und Nacht (warm, ohne eigene Schatten)
       for (const [x, y, z, d] of [[180.5, A_Y + 2.2, -7, 10], [178, A_Y + 2.2, 7, 9], [185.5, A_Y + 2.2, 7.4, 7], [173.7, A_Y + 2.2, 0, 8], [181.5, A_Y + 2.2, 0, 8],
         [185.6, B_Y + 2.3, 2.4, 7], [178.5, B_Y + 2.2, 2.4, 7], [183, B_Y + 2.3, -2.6, 7], [179.4, B_Y + 2.2, -2.6, 6], [205.3, G_YC - 0.3, 0, 6]]) {
@@ -501,8 +597,15 @@ async function boot() {
         g.clearRect(0, 0, 64, 64); g.fillStyle = 'rgba(201,163,90,0.92)'; g.beginPath(); g.arc(32, 32, 26, 0, 7); g.fill();
         g.strokeStyle = '#fff6e0'; g.lineWidth = 3; g.stroke(); g.fillStyle = '#1b1915'; g.font = 'italic bold 40px Georgia,serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('i', 32, 35);
       }, { repeat: false });
-      iMat = new THREE.SpriteMaterial({ map: iTex, transparent: true, depthWrite: false, fog: false });
-      for (const i of infos) { const s = new THREE.Sprite(iMat); s.position.copy(i.pos); s.scale.setScalar(0.2); s.renderOrder = 6; ship.add(s); i.sprite = s; }
+      // alle Marker als EIN Punktwolken-Objekt (ein Zeichenaufruf statt einem je Marker); Punktgröße = 0,2 m wie zuvor die Sprites.
+      // i.sprite bleibt als Objekt mit visible erhalten (Module schalten darüber einzelne Marker)
+      iMat = new THREE.PointsMaterial({ map: iTex, transparent: true, depthWrite: false, fog: false, sizeAttenuation: true, size: markerSize() });
+      markerMat = iMat; markers = new THREE.Points(new THREE.BufferGeometry(), iMat); markers.renderOrder = 6; markers.frustumCulled = false; ship.add(markers);
+      for (const i of infos) {
+        let v = true;
+        i.sprite = { get visible() { return v; }, set visible(x) { x = !!x; if (x !== v) { v = x; markers.userData.dirty = true; } } };
+      }
+      markers.userData.dirty = true;
       player.teleport(...START);
       player.onKey = onKey;
       setYear(1936);
@@ -550,6 +653,44 @@ async function boot() {
   $('load').remove();
   $('start').style.display = 'flex';
   running = true; lastNow = 0; requestAnimationFrame(loop);
+  setTimeout(() => warmHidden().catch((err) => console.warn('Vorwärmen abgebrochen:', err)), 1500);
+}
+/** Nach dem Start: die ausgeblendeten Teile (Mastszene, Jahr 1937, abgeschaltete Module) vorwärmen, damit das erste
+ *  Umschalten nicht ruckelt. Texturen im Leerlauf; Geometrie portionsweise in den nächsten Bildern mit den echten
+ *  Materialien (Hochladen, Shader-Bindungen, Vertex-Arrays genau der Variante, die später gezeichnet wird) – das Bild
+ *  wird danach ohnehin vollständig überzeichnet. Zuletzt ein Schattenbild mit allem (Tiefen-Shader). */
+const warmQ = [];
+async function warmHidden() {
+  const idle = () => new Promise((res) => (window.requestIdleCallback ? requestIdleCallback(() => res(), { timeout: 400 }) : setTimeout(res, 60)));
+  const shown = (o) => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
+  const hid = [], tex = new Set();
+  scene.traverse((o) => { // ganze Szene: manche Module hängen eigene Gruppen direkt an die Szene (z. B. die Mastszene)
+    if (!(o.isMesh || o.isLine || o.isPoints) || shown(o)) return;
+    hid.push(o); const m = o.material; if (m && !Array.isArray(m)) for (const k of ['map', 'alphaMap', 'emissiveMap']) if (m[k]) tex.add(m[k]);
+  });
+  let k = 0; for (const t of tex) { if (k++ % 8 === 0) { await idle(); if (lost) return; } renderer.initTexture(t); }
+  let cur = [], n = 0;
+  for (const o of hid) { cur.push(o); n += o.geometry.attributes.position ? o.geometry.attributes.position.count : 0; if (n > 1.2e5) { warmQ.push(cur); cur = []; n = 0; } }
+  if (cur.length) warmQ.push(cur);
+  while (warmQ.length) { await idle(); if (lost) return; }
+  await idle();
+  if (lost || !world || !world.sun.castShadow) return;
+  const rt = new THREE.WebGLRenderTarget(1, 1), basic = new THREE.MeshBasicMaterial();
+  const saved = []; scene.traverse((o) => saved.push([o, o.visible]));
+  scene.traverse((o) => { o.visible = true; });
+  const ov = scene.overrideMaterial, prevRT = renderer.getRenderTarget();
+  try { renderer.shadowMap.needsUpdate = true; scene.overrideMaterial = basic; renderer.setRenderTarget(rt); renderer.render(scene, camera); }
+  finally { renderer.setRenderTarget(prevRT); scene.overrideMaterial = ov; for (const [o, v] of saved) o.visible = v; renderer.shadowMap.needsUpdate = true; rt.dispose(); basic.dispose(); }
+}
+/** eine Portion vorwärmen: nur sie (samt ausgeblendeter Elterngruppen) sichtbar, in das Ziel des folgenden Bildes zeichnen */
+function warmStep() {
+  const sl = warmQ.shift(), saved = [];
+  scene.traverse((o) => saved.push([o, o.visible, o.frustumCulled, o.layers.mask]));
+  for (const [o] of saved) if (o.isMesh || o.isLine || o.isPoints || o.isSprite) o.visible = false;
+  for (const o of sl) { o.frustumCulled = false; o.layers.mask |= 1; for (let p = o; p; p = p.parent) p.visible = true; }
+  const sh = renderer.shadowMap.needsUpdate, prevRT = renderer.getRenderTarget();
+  try { renderer.shadowMap.needsUpdate = false; renderer.setRenderTarget(composer && Q.ao ? composer.readBuffer : null); renderer.render(scene, camera); }
+  finally { renderer.setRenderTarget(prevRT); renderer.shadowMap.needsUpdate = sh; for (const [o, v, f, l] of saved) { o.visible = v; o.frustumCulled = f; o.layers.mask = l; } }
 }
 /** Geometrie und Texturen in Portionen auf die Grafikkarte laden (statt alles im ersten Bild): je Portion ein
  *  unsichtbarer Zeichenvorgang in ein 1×1-Bild, dazwischen kommt der Browser zum Zug. */
@@ -596,4 +737,4 @@ boot().catch((err) => {
 
 // für Tests in der Konsole
 window.__hb = { setTime, setYear, setMode, sim, actions, modules, player, nav, scene, camera, renderer, go, setFly, infos, tps, prof, auto, bootLog, blocks, frame, setQual, signs,
-  get world() { return world; }, get hull() { return hull; }, get Q() { return Q; }, get qual() { return qual; } };
+  get world() { return world; }, get warm() { return warmQ.length; }, get hull() { return hull; }, get Q() { return Q; }, get qual() { return qual; } };

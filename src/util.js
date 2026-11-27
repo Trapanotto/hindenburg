@@ -57,9 +57,58 @@ const NEED_UV = ['map', 'alphaMap', 'aoMap', 'lightMap', 'bumpMap', 'normalMap',
 /** Materialien ohne Textur brauchen keine UV-Koordinaten (spart ein Viertel des Geometriespeichers). */
 const needsUV = (mat) => !!mat.userData.wuv || !!mat.userData.keepUV || NEED_UV.some((k) => mat[k]);
 
+// ---------- Materialien zusammenlegen ----------
+// Viele Materialien unterscheiden sich nur in der Farbe (bei MeshStandardMaterial zusätzlich in Rauheit/Metallanteil).
+// Der Builder legt solche Materialien zu EINEM gemeinsamen Material zusammen und schreibt Farbe (und Rauheit/Metall)
+// als Eckpunktattribut in die Geometrie: gleiches Aussehen, aber ein Bruchteil der Zeichenaufrufe.
+// Ausgenommen: durchscheinende Materialien, Materialien mit eigenen Shadern/Vertexfarben/Zusatztexturen und alles mit
+// userData.noMerge = true (Materialien, die zur Laufzeit verändert werden, z. B. M.lamp – Änderungen am Original
+// kämen bei zusammengelegten Teilen nicht an).
+const MERGED = new Map(), MKEY = new WeakMap();
+const OTHER_MAPS = NEED_UV.filter((k) => k !== 'map').concat(['envMap', 'clearcoatMap', 'sheenColorMap', 'transmissionMap', 'thicknessMap', 'iridescenceMap', 'anisotropyMap', 'gradientMap', 'matcap']);
+const BASE_OBC = THREE.Material.prototype.onBeforeCompile;
+function mergeKey(mat) {
+  if (MKEY.has(mat)) return MKEY.get(mat);
+  let k = null;
+  const std = mat.isMeshStandardMaterial && !mat.isMeshPhysicalMaterial;
+  if ((mat.isMeshLambertMaterial || std || mat.isMeshPhongMaterial || mat.isMeshBasicMaterial) && !mat.userData.noMerge && !mat.transparent && !mat.vertexColors &&
+    mat.visible && mat.onBeforeCompile === BASE_OBC && !(mat.defines && Object.keys(mat.defines).some((d) => d !== 'STANDARD')) && !OTHER_MAPS.some((m) => mat[m])) {
+    const hex = (c) => (c ? c.getHexString() : '-');
+    k = [mat.type, mat.map ? mat.map.uuid : '-', mat.userData.wuv || 0, mat.userData.keepUV ? 1 : 0, mat.side, mat.alphaTest, mat.opacity, hex(mat.emissive), mat.emissiveIntensity,
+      mat.depthWrite, mat.depthTest, mat.polygonOffset, mat.polygonOffsetFactor, mat.polygonOffsetUnits, mat.flatShading, mat.fog, mat.toneMapped, mat.wireframe,
+      mat.blending, mat.colorWrite, mat.dithering, mat.shadowSide, mat.alphaToCoverage, mat.isMeshPhongMaterial ? hex(mat.specular) + mat.shininess : ''].join('|');
+  }
+  MKEY.set(mat, k);
+  return k;
+}
+/** gemeinsames Material mit Eckpunktfarben (bei Standard auch Rauheit/Metall je Eckpunkt) */
+function sharedMat(mat, key) {
+  let s = MERGED.get(key);
+  if (s) return s;
+  s = mat.clone(); s.color.setRGB(1, 1, 1); s.vertexColors = true; s.name = 'merged:' + mat.type;
+  s.userData = { ...mat.userData, merged: true };
+  if (mat.isMeshStandardMaterial) {
+    s.roughness = 1; s.metalness = 1; s.userData.pbr = true;
+    s.onBeforeCompile = (sh) => {
+      sh.vertexShader = 'attribute vec2 pbr;\nvarying vec2 vPbr;\n' + sh.vertexShader.replace('#include <color_vertex>', '#include <color_vertex>\n\tvPbr = pbr;');
+      sh.fragmentShader = 'varying vec2 vPbr;\n' + sh.fragmentShader
+        .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vPbr.x;')
+        .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vPbr.y;');
+    };
+    s.customProgramCacheKey = () => 'hb-pbr';
+  }
+  MERGED.set(key, s);
+  return s;
+}
+
 /** Fasst alle Teile je Material zu einem einzigen Mesh zusammen (wenige Draw-Calls). */
 export class Builder {
-  constructor() { this.m = new Map(); this.maps = new Map([['', this.m]]); this.stack = [new THREE.Matrix4()]; this.calls = 0; }
+  constructor() {
+    this.m = new Map(); this.maps = new Map([['', this.m]]); this.stack = [new THREE.Matrix4()]; this.calls = 0;
+    /** optional (x0,x1,y0,y1,z0,z1) => true für Teile tief im Schiffsinneren, die von außen nie zu sehen sind; solche
+     *  Teile kommen in eigene Meshes (userData.inner), die main.js bei einer Kamera außerhalb der Hülle ausblendet */
+    this.inner = null;
+  }
   /** Alles, was in fn gebaut wird, gehört nur zur Variante tag (z. B. 1936 oder 1937). */
   only(tag, fn) {
     const prev = this.m; tag = String(tag);
@@ -153,7 +202,7 @@ export class Builder {
     let total = 0, done = 0;
     for (const map of this.maps.values()) total += map.size;
     for (const [tag, map] of this.maps) {
-      for (const k of this._build(map, tag ? groups[tag] || parent : parent, parent)) { done++; yield done / Math.max(1, total); }
+      for (const k of this._build(map, tag ? groups[tag] || parent : parent, parent)) { done += k; yield done / Math.max(1, total); }
       map.clear();
     }
   }
@@ -161,50 +210,73 @@ export class Builder {
     // Je Material in 15-m-Abschnitte längs des Schiffs teilen (Sichtfeld-Auslese) und nach Größe staffeln:
     // Kleinteile (Klasse 2) und mittlere Teile (Klasse 1) werden ab einer Entfernung ausgeblendet.
     const BIN = 15, lod = lodRoot.userData.lod || (lodRoot.userData.lod = []);
-    for (const [mat, list] of map) {
-      const bins = new Map(), uv = needsUV(mat);
+    // gleichartige Materialien zusammenlegen (siehe mergeKey): Ziel-Material -> Liste [Quellmaterial, Teile]
+    const groups = new Map();
+    for (const [src, list] of map) {
+      const key = mergeKey(src), mat = key ? sharedMat(src, key) : src;
+      let g = groups.get(mat); if (!g) groups.set(mat, g = []); g.push([src, list]);
+    }
+    for (const [mat, srcs] of groups) {
+      const bins = new Map(), uv = needsUV(mat), vc = !!mat.userData.merged, pbr = !!mat.userData.pbr;
       const put = (k, item, verts) => { let b = bins.get(k); if (!b) bins.set(k, b = { items: [], n: 0 }); b.items.push(item); b.n += verts; };
       const cls = (d, fine, mid) => (mat.transparent ? 0 : d < fine ? 2 : d < mid ? 1 : 0);
-      for (const e of list) {
+      // Abschnitt: 15 m längs x; Kleinteile in Würfeln von 12 m, damit ihre Hüllkugel klein bleibt und die
+      // Entfernungsstaffelung greift, obwohl viele Materialien zusammengelegt sind
+      const inn = this.inner ? (...a) => (this.inner(...a) ? '|i' : '') : () => '';
+      const cell = (x, y, z, c) => (c === 2 ? Math.floor(x / 12) + ',' + Math.floor(y / 12) + ',' + Math.floor(z / 12) + '|2' : Math.floor(x / BIN) + '|' + c);
+      for (const [src, list] of srcs) for (const e of list) {
         const dx = e.x1 - e.x0, dy = e.y1 - e.y0, dz = e.z1 - e.z0;
-        if (dx <= BIN * 1.5) { put(Math.floor((e.x0 + e.x1) / 2 / BIN) + '|' + cls(Math.hypot(dx, dy, dz), 0.4, 2.2), { e }, e.p.length / 3); continue; }
+        if (dx <= BIN * 1.5) { put(cell((e.x0 + e.x1) / 2, (e.y0 + e.y1) / 2, (e.z0 + e.z1) / 2, cls(Math.hypot(dx, dy, dz), 0.4, 2.2)) + inn(e.x0, e.x1, e.y0, e.y1, e.z0, e.z1), { e, src }, e.p.length / 3); continue; }
         // lange, bereits zusammengefasste Geometrie dreiecksweise aufteilen
         const P = e.p, parts = new Map();
         for (let t = 0, nt = P.length / 9; t < nt; t++) {
           const o = t * 9;
           const ext = Math.max(Math.abs(P[o] - P[o + 3]), Math.abs(P[o + 1] - P[o + 4]), Math.abs(P[o + 2] - P[o + 5]), Math.abs(P[o] - P[o + 6]), Math.abs(P[o + 1] - P[o + 7]), Math.abs(P[o + 2] - P[o + 8]));
-          const k = Math.floor((P[o] + P[o + 3] + P[o + 6]) / 3 / BIN) + '|' + cls(ext, 0.1, 0.9);
+          const k = cell((P[o] + P[o + 3] + P[o + 6]) / 3, (P[o + 1] + P[o + 4] + P[o + 7]) / 3, (P[o + 2] + P[o + 5] + P[o + 8]) / 3, cls(ext, 0.1, 0.9)) +
+            (this.inner ? inn(Math.min(P[o], P[o + 3], P[o + 6]), Math.max(P[o], P[o + 3], P[o + 6]), Math.min(P[o + 1], P[o + 4], P[o + 7]), Math.max(P[o + 1], P[o + 4], P[o + 7]), Math.min(P[o + 2], P[o + 5], P[o + 8]), Math.max(P[o + 2], P[o + 5], P[o + 8])) : '');
           let a = parts.get(k); if (!a) parts.set(k, a = []); a.push(t);
         }
-        for (const [k, tris] of parts) put(k, { e, tris }, tris.length * 3);
+        for (const [k, tris] of parts) put(k, { e, tris, src }, tris.length * 3);
       }
       for (const [key, bin] of bins) {
         if (!bin.n) continue;
         // direkt in die Zielpuffer kopieren (statt Zwischengeometrien und mergeGeometries)
         const pos = new Float32Array(bin.n * 3), nor = new Float32Array(bin.n * 3), uvs = uv ? new Float32Array(bin.n * 2) : null;
+        // Farbe linear als 16-Bit-Wert (8 Bit wären bei dunklen Tönen sichtbar ungenau), Rauheit/Metall als 8 Bit
+        const col = vc ? new Uint16Array(bin.n * 3) : null, pb = pbr ? new Uint8Array(bin.n * 2) : null;
         let o3 = 0, o2 = 0;
-        for (const { e, tris } of bin.items) {
+        for (const { e, tris, src } of bin.items) {
+          const v0 = o3 / 3;
           if (!tris) {
             pos.set(e.p, o3); nor.set(e.n, o3); if (uvs) uvs.set(e.u, o2);
-            o3 += e.p.length; o2 += e.p.length / 3 * 2; continue;
+            o3 += e.p.length; o2 += e.p.length / 3 * 2;
+          } else {
+            for (const t of tris) {
+              pos.set(e.p.subarray(t * 9, t * 9 + 9), o3); nor.set(e.n.subarray(t * 9, t * 9 + 9), o3); o3 += 9;
+              if (uvs) uvs.set(e.u.subarray(t * 6, t * 6 + 6), o2); o2 += 6;
+            }
           }
-          for (const t of tris) {
-            pos.set(e.p.subarray(t * 9, t * 9 + 9), o3); nor.set(e.n.subarray(t * 9, t * 9 + 9), o3); o3 += 9;
-            if (uvs) uvs.set(e.u.subarray(t * 6, t * 6 + 6), o2); o2 += 6;
+          if (col) {
+            const c = src.color, r = Math.round(Math.min(1, c.r) * 65535), g = Math.round(Math.min(1, c.g) * 65535), bl = Math.round(Math.min(1, c.b) * 65535);
+            for (let v = v0, v1 = o3 / 3; v < v1; v++) { col[v * 3] = r; col[v * 3 + 1] = g; col[v * 3 + 2] = bl; }
+            if (pb) { const ro = Math.round(src.roughness * 255), me = Math.round(src.metalness * 255); for (let v = v0, v1 = o3 / 3; v < v1; v++) { pb[v * 2] = ro; pb[v * 2 + 1] = me; } }
           }
         }
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
         if (uvs) { g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2)); if (mat.userData.wuv) worldUV(g, mat.userData.wuv); }
-        const mesh = new THREE.Mesh(g, mat), c = +key.split('|')[1];
+        if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
+        if (pb) g.setAttribute('pbr', new THREE.BufferAttribute(pb, 2, true));
+        const kp = key.split('|'), mesh = new THREE.Mesh(g, mat), c = +kp[1];
+        if (kp[2] === 'i') mesh.userData.inner = true;
         if (mat.transparent) mesh.renderOrder = 2;
         mesh.userData.built = true; // statische Builder-Geometrie (darf nach dem Hochladen aus dem Arbeitsspeicher)
         g.computeBoundingSphere(); g.computeBoundingBox();
         if (c > 0) { mesh.userData.lodC = g.boundingSphere.center.clone(); mesh.userData.lodR = g.boundingSphere.radius; mesh.userData.lodK = c; lod.push(mesh); }
         parent.add(mesh);
       }
-      list.length = 0;
-      yield mat;
+      for (const [, list] of srcs) list.length = 0;
+      yield srcs.length;
     }
   }
 }

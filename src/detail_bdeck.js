@@ -3,11 +3,11 @@
 // Lederfarbe im Rauchsalon: dunkel blaugrau (airships.net); die Angabe „schwarzes Leder“ (Airship Heritage Trust) wurde verworfen.
 import * as THREE from 'three';
 import { V } from './util.js';
-import { ROOMS } from './decks.js';
+import { ROOMS, lean } from './decks.js';
 import { B_Y, B_H, A_Y, hw, FALLREEP } from './hull.js';
 
 export default function (C) {
-  const { b, M, nav } = C;
+  const { M, nav } = C, b = lean(C.b);
   const RM = {}; for (const r of ROOMS) RM[r.name] = r;
   const BY = B_Y, BC = Math.min(B_Y + B_H, A_Y - 0.2);
   const KG = RM['Kielgang (B-Deck)'], TS = RM['Treppe und Fallreep Steuerbord'];

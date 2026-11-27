@@ -30,7 +30,13 @@ const osc = (type, f) => { const o = A.ctx.createOscillator(); o.type = type; o.
 const gn = (v = 1) => { const g = A.ctx.createGain(); g.gain.value = v; return g; };
 const filt = (type, f, q = 0.7) => { const b = A.ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
 const panner = () => (A.ctx.createStereoPanner ? A.ctx.createStereoPanner() : gn(1));
-const setF = (p, v, tc = 0.2) => p.setTargetAtTime(v, A.ctx.currentTime, tc);
+// Zielwert nur setzen, wenn er sich seit dem letzten Setzen um mehr als 1 % geändert hat (spart Web-Audio-Aufrufe)
+const lastF = new WeakMap();
+const setF = (p, v, tc = 0.2) => {
+  const l = lastF.get(p);
+  if (l !== undefined && Math.abs(v - l) <= Math.max(1e-3, Math.abs(l) * 0.01)) return;
+  lastF.set(p, v); p.setTargetAtTime(v, A.ctx.currentTime, tc);
+};
 /** Abstand eines Punkts zu einem Raumquader (Boden y, Höhe 2,5 m) */
 const boxD = (b, p) => Math.hypot(Math.max(b.x0 - p.x, 0, p.x - b.x1), Math.max(b.y - p.y, 0, p.y - b.y - 2.5), Math.max(b.z0 - p.z, 0, p.z - b.z1));
 /** Gewicht eines Raums: drinnen 1, draußen durch Wand gedämpft und nach ~6 m ausgeblendet */
@@ -249,6 +255,13 @@ function pnote(t, m, vel, dur) {
     o.onended = () => g.disconnect();
   });
 }
+const FOURTHS = SCALE.filter((x) => x % 12 === 5); // Quarten-/Grundtöne der Skala, einmal berechnet
+const TONES_OF = new Map(); // Skalentöne je Akkord, einmal berechnet
+function chordTones(ch) {
+  let t = TONES_OF.get(ch);
+  if (!t) { t = SCALE.filter((m) => ch.some((c) => (m - c) % 12 === 0)); TONES_OF.set(ch, t); }
+  return t;
+}
 function pianoRun(t) {
   if (A.pT < t) A.pT = t + 0.1;
   while (A.pT < t + 0.3) {
@@ -257,9 +270,9 @@ function pianoRun(t) {
     if (bt === 0) {
       pnote(T + sw, ch[0] - (rnd() < 0.5 ? 12 : 0), 0.32, SPB * 3);
       // Melodie: Akkordton nahe dem letzten Ton, am Phrasenende Grundton
-      const tones = SCALE.filter((m) => ch.some((c) => (m - c) % 12 === 0));
+      const tones = chordTones(ch);
       let m = tones.reduce((a, b) => (Math.abs(b - A.mel) < Math.abs(a - A.mel) ? b : a), tones[0]);
-      if (last) m = SCALE.filter((x) => x % 12 === 5).reduce((a, b) => (Math.abs(b - A.mel) < Math.abs(a - A.mel) ? b : a));
+      if (last) m = FOURTHS.reduce((a, b) => (Math.abs(b - A.mel) < Math.abs(a - A.mel) ? b : a));
       else if (rnd() < 0.35) m = tones[clamp(tones.indexOf(m) + (rnd() < 0.5 ? 1 : -1), 0, tones.length - 1)];
       A.mel = m; pnote(T + sw * 0.5, m, 0.5 + rnd() * 0.12, last ? SPB * 3 : SPB * (rnd() < 0.5 ? 2 : 1));
     } else {
@@ -273,6 +286,13 @@ function pianoRun(t) {
     if (A.beat % 48 === 0) A.pT += SPB * 2;
   }
 }
+
+// Lautstärke-/Filtertabellen je Umgebung (Modulebene, damit die Schleife keine Objekte je Pegelschritt anlegt)
+const OCC_T = { out: 1, eng: 1, keel: 0.6, axial: 0.3, ctrl: 0.35, pax: 0.18, ground: 1 };
+const LPMAX_T = { out: 5000, eng: 5000, keel: 1500, axial: 650, ctrl: 1400, pax: 150, ground: 3000 };
+const PANK_T = { out: 0.9, eng: 0.9, keel: 0.75, axial: 0.5, ctrl: 0.6, pax: 0.25, ground: 0.9 };
+const WK_T = { out: 0.5, eng: 0.6, keel: 0.05, axial: 0.025, ctrl: 0.12, pax: 0.012, ground: 0 };
+const WF_T = { out: 900, eng: 1100, keel: 320, axial: 260, ctrl: 600, pax: 220, ground: 600 };
 
 // ---------- Hauptschleife ----------
 export function update(dt, C) {
@@ -303,27 +323,25 @@ export function update(dt, C) {
   const wh = A.where = where(C), env = wh.env, cam = C.camera.position, spd = clamp(Math.abs(sim.speed) / VC, 0, 1.2);
 
   // Motoren
-  const OCC = { out: 1, eng: 1, keel: 0.6, axial: 0.3, ctrl: 0.35, pax: 0.18, ground: 1 }[env];
-  const LPMAX = { out: 5000, eng: 5000, keel: 1500, axial: 650, ctrl: 1400, pax: 150, ground: 3000 }[env];
-  const PANK = { out: 0.9, eng: 0.9, keel: 0.75, axial: 0.5, ctrl: 0.6, pax: 0.25, ground: 0.9 }[env];
+  const OCC = OCC_T[env], LPMAX = LPMAX_T[env], PANK = PANK_T[env];
   const e3 = C.camera.matrixWorld.elements, rx = e3[0], ry = e3[1], rz = e3[2]; // rechte Kamera-Achse
-  A.eng.forEach((E, i) => {
+  for (let i = 0; i < A.eng.length; i++) {
+    const E = A.eng[i];
     const R = sim.rpm, tgt = Array.isArray(R) && Number.isFinite(R[TELE[i]]) ? Math.abs(R[TELE[i]]) : (mast ? 0 : RPM_REISE * clamp(Math.abs(sim.speed) / VC, 0, 1.15));
     const rpm = A.rpm[i] += (tgt - A.rpm[i]) * Math.min(1, dT / 1.2);
     const c = E.e.c, dx = c.x - cam.x, dy = c.y - cam.y, dz = c.z - cam.z, d = Math.hypot(dx, dy, dz) || 1;
     const load = rpm < 40 ? 0 : (0.3 + 0.7 * (rpm / RPM_REISE) ** 1.3) * clamp((rpm - 40) / 160, 0, 1);
     setV(E.v, OCC * load / (1 + d / (env === 'out' ? 18 : 6)), dT, 0.3); // im Freien trägt der Schall weiter
-    if (!E.v.on) return;
+    if (!E.v.on) continue;
     const f = Math.max(5, rpm / 60 * 8) * E.det, tc = 0.4;
     setF(E.a.frequency, f, tc); setF(E.h.frequency, f / 2, tc); setF(E.p.frequency, f / 4, tc); setF(E.l.frequency, f / 8, tc);
     setF(E.lp.frequency, Math.min(LPMAX, 250 + 4500 / (1 + d / 4)), 0.3);
     setF(E.gz.gain, 0.25 + 0.5 * (rpm / RPM_REISE), 0.5);
     if (E.pan.pan) setF(E.pan.pan, clamp((dx * rx + dy * ry + dz * rz) / d, -1, 1) * PANK, 0.15);
-  });
+  }
 
   // Fahrtwind bzw. Wind am Mast
-  const WK = { out: 0.5, eng: 0.6, keel: 0.05, axial: 0.025, ctrl: 0.12, pax: 0.012, ground: 0 }[env];
-  const WF = { out: 900, eng: 1100, keel: 320, axial: 260, ctrl: 600, pax: 220, ground: 600 }[env];
+  const WK = WK_T[env], WF = WF_T[env];
   let wl = WK * spd * spd * (0.85 + 0.3 * A.gust);
   if (mast) wl = env === 'ground' || env === 'out' ? 0.06 + 0.22 * A.gust : 0.012 + 0.03 * A.gust;
   setV(A.wind, wl, dT, 0.4);

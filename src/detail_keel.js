@@ -5,14 +5,14 @@ import * as THREE from 'three';
 import { V, rng } from './util.js';
 import { ST, MAIN, rLin, keelY, hp, hw, ENG, D2R, WIN_A, WIN_B, GX0, GX1, FALLREEP } from './hull.js';
 import { KEEL_RANGES, AXIAL, LADDERS, LADDER_Z, FIN_STAND, finHalf, BOW, STB_RES, ROOMS, PLATFORMS, TANKS, roomById, segs, ROOM_H } from './keel.js';
-import { table, chair } from './decks.js';
+import { table, chair, lean } from './decks.js';
 
 const fmt = (x) => String(x).replace('.', ',');
 const ROM = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI'];
 const SHAFTS = [33.5, 62, 92, 123.5, 156.5, 188, 218];   // Gasschächte (rumpf.md, Abschnitt 7)
 
 export default function (C) {
-  const { b, M, root } = C;
+  const { M, root } = C, b = lean(C.b);
   const nav = C.nav, sign = C.sign, gauge = C.gauge, panel = C.panel;
   const R = rng(1290);
   const ky = keelY;
@@ -109,7 +109,7 @@ export default function (C) {
         const y0 = ky(c0), y1 = ky(c1);
         b.beam(M.alu, V(c0, y0 - 0.6, s * 1.9), V(c1, y1 - 0.6, s * 1.9), 0.06);      // Untergurte des Kielträgers
         for (const [mt, r, z, dy] of PIPES) {                                         // Wasser, Kraftstoff, Druckluft
-          b.cyl(mt, V(c0, y0 + dy, s * z), V(c1, y1 + dy, s * z), r, 8);
+          b.tube(mt, V(c0, y0 + dy, s * z), V(c1, y1 + dy, s * z), r, 8);              // Stöße im nächsten Stück, Enden im Flansch
           for (const e of [c0, c1]) if (ENDS.includes(e)) flange(e, ky(e) + dy, s * z, r);
         }
       }
@@ -800,7 +800,7 @@ export default function (C) {
   // Verbindungen der Zellen I/II und XV/XVI (gemeinsames Manövrierventil)
   for (const m of [20, 233]) { const y = K * rLin(m) - 0.6; b.cyl(M.canvas, V(m - 1.0, y, 0), V(m + 1.0, y, 0), 0.22, 12); for (const dx of [-0.6, 0.6]) b.torus(M.brass, 0.23, 0.02, m + dx, y, 0, 'x', 14); }
   // Gasschächte vom Kiel bis zum Schiffsrücken mit Abzugshauben
-  { const hoop = new THREE.TorusGeometry(1, 0.05, 4, 14);
+  { const hoop = new THREE.TorusGeometry(1, 0.05, 4, 10);
     const shaft = (xs, yb, yt) => {
       const P = (q, y) => V(xs + (q === 0 || q === 3 ? 0.106 : -0.106), y, q < 2 ? 0.212 : -0.212);
       for (let q = 0; q < 4; q++) b.cyl(M.alu, P(q, yb), P(q, yt), 0.015, 4);
@@ -822,10 +822,8 @@ export default function (C) {
         shaft(xs, yk + 0.04, AY - 0.2);
       }
       if (m < 40) continue;                                     // Ring 33,5: Abzug liegt in der oberen Flosse
-      b.vcyl(M.aluDark, 0.3, 0.45, xs, r - 0.1, 0, 10);
-      for (let k = 0; k < 3; k++) { const a = k * 2.09; b.cyl(M.aluDark, V(xs + 0.24 * Math.cos(a), r + 0.33, 0.24 * Math.sin(a)), V(xs + 0.24 * Math.cos(a), r + 0.43, 0.24 * Math.sin(a)), 0.02, 4); }
-      b.vcyl(M.aluDark, 0.5, 0.05, xs, r + 0.42, 0, 12);
-      b.vcyl(M.aluDark, 0.5, 0.15, xs, r + 0.47, 0, 12, 0.06);
+      // Durchführung durch die Hülle; die Abzugshaube außen baut detail_exterior.js (gasHaube, gleiche Lage xs)
+      b.vcyl(M.aluDark, 0.3, 0.14, xs, r - 0.1, 0, 10);
     }
     sign('Gasschacht', 62.42, AY + 2.6, 0.24, 0.07, 'z+', 'red');
     sign('Gasschacht', 123.92, AY + 2.6, 0.24, 0.07, 'z+', 'red');
@@ -902,16 +900,9 @@ export default function (C) {
 
   // ===================== Hilfssteuerstand in der unteren Flosse =====================
   { const S = FIN_STAND, y = S.y, wy = y + 1.05, xR = S.x1 - 0.5, xH = 39.4, zH = -0.24;
-    const spokes = (cx, cz, plane) => { // plane 'x': Rad in YZ-Ebene, 'z': Rad in XY-Ebene
-      for (let k = 0; k < 8; k++) {
-        const a = k * Math.PI / 4, ca = Math.cos(a), sa = Math.sin(a);
-        const pt = (rr) => (plane === 'x' ? V(cx, wy + ca * rr, cz + sa * rr) : V(cx + sa * rr, wy + ca * rr, cz));
-        if (k < 4) b.cyl(M.woodLight, pt(-0.33), pt(0.33), 0.012, 5);
-        b.cyl(M.woodLight, pt(0.33), pt(0.41), 0.015, 5);
-      }
-    };
-    spokes(xR, 0, 'x'); b.cyl(M.brass, V(xR - 0.06, wy, 0), V(xR + 0.18, wy, 0), 0.05, 10);
-    spokes(xH, zH, 'z'); b.cyl(M.brass, V(xH, wy, zH - 0.04), V(xH, wy, zH - 0.13), 0.05, 10);
+    // Speichen und Griffe der beiden Räder sind beweglich (feature_interact.js, gleiche Lage, etwas dicker): hier nur die Naben
+    b.cyl(M.brass, V(xR - 0.06, wy, 0), V(xR + 0.18, wy, 0), 0.05, 10);
+    b.cyl(M.brass, V(xH, wy, zH - 0.04), V(xH, wy, zH - 0.13), 0.05, 10);
     // Kompass auf dem Seitenruderstand
     const xc = S.x1 - 0.32;
     b.vcyl(M.brass, 0.1, 0.1, xc, y + 0.95, 0, 12);
